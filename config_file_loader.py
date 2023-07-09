@@ -1,11 +1,13 @@
 # Python Imports
 import copy 
+import sys
+import re
 
 # Package Imports
 import yaml
 
 # Project Imports
-
+from .utils import *
 
 
 
@@ -27,6 +29,15 @@ class ConfigFileLoader:
         # Load the experiments
         self.experiment_configs = self._load_experiment_configs(root_configs)
 
+        # check for unresolved variables
+        # We need to change the max recursion depth since we can go deeeeeeeep but make 
+        # sure we change it back when we are done
+        sys.setrecursionlimit(100000)
+        self._check_for_unresolved_variables(self.model_architecture_configs)
+        self._check_for_unresolved_variables(self.experiment_configs)
+        sys.setrecursionlimit(1000)
+
+        
         # # print(yaml.dump(self.model_architecture_configs, allow_unicode=True, default_flow_style=False))
         # print(yaml.dump(self.experiments, allow_unicode=True, default_flow_style=False))
         
@@ -159,42 +170,36 @@ class ConfigFileLoader:
         processed_experiments = []
         for experiment in experiments:
 
+            # Unpack the experiment configs
+            experiment_name = list(experiment.keys())[0]
+            experiment = experiment[experiment_name]
+
             # If we have a parameters file we need to load then load it and add it to this experiment
-            if("common_experiments_parameters_file" in experiment):
+            if("common_experiments_config_file" in experiment):
                 
                 # Load and update
-                common_experiments_parameters_file = experiment["common_experiments_parameters_file"]
-                common_experiments_parameters = self._load_yaml_file(common_experiments_parameters_file)
-                experiment = self._update_dicts_with_new_dict(experiment, common_experiments_parameters)
+                common_experiments_config_file = experiment["common_experiments_config_file"]
+                common_experiments_parameters = self._load_yaml_file(common_experiments_config_file)
+                experiment = self._update_dicts_with_new_dict(common_experiments_parameters, experiment)
 
                 # Resolve the variable names
-                experiment = self._resolve_variables(experiments)
+                experiment = self._resolve_variables(experiment)
 
 
             # If we have a dataset params file to load
             if("dataset_params_file" in experiment):
                 
-
                 # Load and update
                 dataset_params_file = experiment["dataset_params_file"]
                 dataset_params = self._load_yaml_file(dataset_params_file)
                 experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
 
                 # Resolve the variable names
-                experiment = self._resolve_variables(experiments)
+                experiment = self._resolve_variables(experiment)
 
-            processed_experiments.append(experiment)
+            processed_experiments.append({experiment_name: experiment, })
 
         return processed_experiments
-
-
-    def _get_mandatory_config(self, config_name, config_dict, config_dict_name):
-
-        if(config_name not in config_dict):
-            print("Could not find \"{}\" in \"{}\"".format(config_name, config_dict_name))
-            assert(False)
-
-        return config_dict[config_name]
 
 
     def _load_yaml_file(self, file_path):
@@ -276,6 +281,25 @@ class ConfigFileLoader:
         else:
             return target
 
+
+    def _check_for_unresolved_variables(self, target):
+
+        if(isinstance(target, dict)):
+            for key, value in target.items():
+                self._check_for_unresolved_variables(key)
+                self._check_for_unresolved_variables(value)
+
+        elif(isinstance(target, list)):
+            for value in target:
+                self._check_for_unresolved_variables(value)   
+
+        elif(isinstance(target, str)):
+            pattern = re.compile(r"<[A-Za-z0-9_]+>", re.IGNORECASE)
+            match_pattern = pattern.match(target)
+            
+            if(match_pattern is not None):
+                print("Unresolved variable \"{}\"".format(target))
+                assert(False)
 
 
 
