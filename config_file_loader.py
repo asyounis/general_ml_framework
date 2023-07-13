@@ -187,11 +187,11 @@ class ConfigFileLoader:
 
 
             # If we have a dataset params file to load
-            if("dataset_params_file" in experiment):
+            if("dataset_configs_file" in experiment):
                 
                 # Load and update
-                dataset_params_file = experiment["dataset_params_file"]
-                dataset_params = self._load_yaml_file(dataset_params_file)
+                dataset_configs_file = experiment["dataset_configs_file"]
+                dataset_params = self._load_yaml_file(dataset_configs_file)
                 experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
 
                 # Resolve the variable names

@@ -27,6 +27,15 @@ def get_mandatory_config_as_type(config_name, config_dict, config_dict_name, dty
 
 
 
+def get_optional_config_with_default(config_name, config_dict, config_dict_name, default_value=None):
+
+    if(config_name not in config_dict):
+        return default_value
+    return config_dict[config_name]
+
+
+
+
 def ensure_directory_exists(directory):
     '''
         Makes sure a directory exists.  If it does not exist then the directory is created
