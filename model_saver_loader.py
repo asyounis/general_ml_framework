@@ -27,6 +27,36 @@ class ModelSaverLoader:
 			self._save_models_in_dir(model_save_dir)
 
 
+	def load_models(model, pretrained_model_configs):
+
+		# If we are to load the full model then load it but make sure no other models have been specified
+		if("full_model" in pretrained_model_configs):
+			assert(len(pretrained_model_configs) == 1)
+
+			# Load the model
+			load_file = pretrained_model_configs["full_model"]
+			state_dict = torch.load(load_file, map_location="cpu")
+			model.load_state_dict(state_dict)
+			print("Loading \"Full Model\"")
+			return
+
+		# Not the full model so we are good!
+
+		# Load the internal models
+		internal_models = model.get_internal_models()
+		for model_name in internal_models.keys():
+
+			# Nothing to load
+			if(model_name not in pretrained_model_configs):
+				continue
+
+			# Load the model
+			load_file = pretrained_model_configs[model_name]
+			state_dict = torch.load(load_file, map_location="cpu")
+			internal_models[model_name].load_state_dict(state_dict)
+			print("Loading \"{}\"".format(model_name))
+
+
 	def _save_models_in_dir(self, directory):
 
 		# Make sure the directory exists
@@ -40,3 +70,5 @@ class ModelSaverLoader:
 
 			# Save the state dict
 			torch.save(self.models_dict[model_name].state_dict(), model_save_filepath)	
+
+

@@ -7,6 +7,7 @@ import re
 # Package Imports
 import yaml
 import torch
+from tqdm import tqdm
 
 # Project Imports
 from ..utils import *
@@ -57,6 +58,9 @@ class BaseTrainer:
         # Create the model saver
         self.model_saver = ModelSaverLoader(self.all_models, self.save_dir)
 
+        # Move the model to the correct device
+        self.model = self.model.to(self.device)
+
     def train(self):
 
         # Keep track of the best validation loss
@@ -67,15 +71,15 @@ class BaseTrainer:
 
             # Do The training pass
             training_loss = self._do_training_epoch(epoch)
-            all_data_plotters["training_epoch_loss"].add_value(training_loss)
+            self.data_plotters["training_epoch_loss"].add_value(training_loss)
 
             # Do the validation pass
             validation_loss = self._do_validation_epoch(epoch)
-            all_data_plotters["validation_epoch_loss"].add_value(validation_loss)
+            self.data_plotters["validation_epoch_loss"].add_value(validation_loss)
 
             # Make all plotters write!
-            for data_plotter in self.data_plotters:
-                data_plotter.plot_and_save()
+            for data_plotter_name in self.data_plotters:
+                self.data_plotters[data_plotter_name].plot_and_save()
 
             # See if the validation loss is better
             if((best_validation_loss is None) or (validation_loss < best_validation_loss)):
@@ -110,7 +114,7 @@ class BaseTrainer:
         number_of_losses_to_use_for_average_loss = 0
 
         # Go through all the data once
-        t = tqdm(iter(self.train_loader), leave=False, total=len(self.train_loader))
+        t = tqdm(iter(self.training_loader), leave=False, total=len(self.training_loader))
         for step, data in enumerate(t):
 
             # Zero out the gradients in prep for optimization
@@ -134,7 +138,7 @@ class BaseTrainer:
                 norm_type = 2
 
                 # Compute the gradient norm
-                norm = [torch.norm(p.grad.detach(), norm_type) for p in self.models[model_name][0].parameters() if p.grad is not None]
+                norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
 
                 # if there is no norm then we cant compute the norm
                 if(len(norm) == 0):
@@ -145,10 +149,10 @@ class BaseTrainer:
 
                 # Add it to the data plotter
                 data_plotter_name = "gradient_norm_{}".format(model_name)
-                self.all_data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
+                self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
 
             # Check if we are in a condition to take an optimization step and if so take the step
-            if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.train_loader))):
+            if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
 
                 # if we have a gradient clipping value then do the clipping
                 if(self.gradient_clip_value is not None):
@@ -159,7 +163,7 @@ class BaseTrainer:
                     optimizer.step()
 
             # Add the loss for the batch so we can do step losses
-            self.all_data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+            self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
 
             # keep track of the average loss
             total_loss += loss.item() * batch_size
@@ -169,6 +173,7 @@ class BaseTrainer:
         average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
 
         return average_loss
+
 
     def _do_validation_epoch(self, epoch):
 
@@ -195,7 +200,7 @@ class BaseTrainer:
                     continue
 
                 # Add the loss for the batch so we can do step losses
-                self.all_data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
+                self.data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
 
                 # keep track of the average loss
                 total_loss += loss.item() * batch_size
@@ -258,7 +263,7 @@ class BaseTrainer:
         has_non_frozen_count = False
         for model_name in learning_rates.keys():
             if(learning_rates[model_name] != "freeze"):
-                has_non_frozen_count == True
+                has_non_frozen_count = True
                 break
         assert(has_non_frozen_count)
 
@@ -287,28 +292,28 @@ class BaseTrainer:
                 # Create the optimizer based on the type
                 optimizer_type = get_mandatory_config("type", optimizer_configs, "optimizer_configs")
                 if(optimizer_type == "Adam"):
-                    weight_decay = get_mandatory_config(weight_decay, optimizer_configs, "optimizer_configs")
+                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.Adam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
                 elif(optimizer_to_use == "AdamW"):
-                    weight_decay = get_mandatory_config(weight_decay, optimizer_configs, "optimizer_configs")
+                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.AdamW(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
                 elif(optimizer_to_use == "NAdam"):
-                    weight_decay = get_mandatory_config(weight_decay, optimizer_configs, "optimizer_configs")
+                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.NAdam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
                 elif(optimizer_to_use == "RMSProp"):
-                    weight_decay = get_mandatory_config(weight_decay, optimizer_configs, "optimizer_configs")
-                    momentum = get_mandatory_config(momentum, optimizer_configs, "optimizer_configs")
-                    eps = get_mandatory_config(eps, optimizer_configs, "optimizer_configs")
-                    alpha = get_mandatory_config(alpha, optimizer_configs, "optimizer_configs")
+                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
+                    momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
+                    eps = get_mandatory_config("eps", optimizer_configs, "optimizer_configs")
+                    alpha = get_mandatory_config("alpha", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.RMSprop(self.all_models[model_name].parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, eps=eps, alpha=alpha)
 
                 elif(optimizer_to_use == "SGD"):
-                    weight_decay = get_mandatory_config(weight_decay, optimizer_configs, "optimizer_configs")
-                    momentum = get_mandatory_config(momentum, optimizer_configs, "optimizer_configs")
-                    dampening = get_mandatory_config(dampening, optimizer_configs, "optimizer_configs")
+                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
+                    momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
+                    dampening = get_mandatory_config("dampening", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.SGD(self.all_models[model_name].parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, dampening=dampening)
 
                 else:
@@ -337,7 +342,7 @@ class BaseTrainer:
         gradient_norm_plot_save_dir = "{}/gradient_norms/".format(self.save_dir)
         for model_name in self.all_models.keys():
             data_plotter_name = "gradient_norm_{}".format(model_name)
-            all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", self.save_dir, "model_name.png")
+            all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name))
 
 
         return all_data_plotters

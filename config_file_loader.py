@@ -14,6 +14,10 @@ from .utils import *
 class ConfigFileLoader:
     def __init__(self, root_config_file):
 
+        # The list of variables that are reserved for the frameworks internal use
+        self.RESERVED_VARIABLES = ["<framework_var_run_number>"]
+
+
         # Load the root config file
         root_configs = self._load_yaml_file(root_config_file)
 
@@ -21,7 +25,7 @@ class ConfigFileLoader:
         self.variables = self._load_variables(root_configs)
 
         # Self resolve the root config for variable names
-        root_configs = self._resolve_variables(root_configs)
+        root_configs = ConfigFileLoader.resolve_variables(self.variables, root_configs)
 
         # Load the the model architecture configs
         self.model_architecture_configs = self._load_model_architecture_configs(root_configs)
@@ -47,6 +51,30 @@ class ConfigFileLoader:
     def get_experiment_configs(self):
         return self.experiment_configs
 
+    def resolve_variables(variables, target):
+        target = copy.deepcopy(target)
+
+        if(isinstance(target, list)):
+            return [ConfigFileLoader.resolve_variables(variables, x) for x in target]
+
+        elif(isinstance(target, dict)):
+            for key in target.keys():
+                target[key] = ConfigFileLoader.resolve_variables(variables, target[key])
+
+            return target
+
+        elif(isinstance(target, str)):
+
+            for var_name in variables:
+                if(var_name in target): 
+                    target = target.replace(var_name, variables[var_name])
+
+            return target
+
+        else:
+            return target
+
+
     def _load_variables(self, root_configs):
 
         # There are no variables and so return an empty dict
@@ -60,6 +88,10 @@ class ConfigFileLoader:
         for variable_name in variables.keys():
             assert(variable_name[0] == "<")
             assert(variable_name[-1] == ">")
+
+        # Make sure none of the reserved variables are set
+        for reserved_variable in self.RESERVED_VARIABLES:
+            assert(reserved_variable not in variables)
 
         return variables
 
@@ -83,7 +115,7 @@ class ConfigFileLoader:
                 model_architecture_configs = self._update_dicts_with_new_dict(model_architecture_configs, cfg)
 
                 # Resolve the variables
-                model_architecture_configs = self._resolve_variables(model_architecture_configs)
+                model_architecture_configs = ConfigFileLoader.resolve_variables(self.variables, model_architecture_configs)
 
         # Load any overrides that we have
         if("model_architecture_overrides" in root_configs):
@@ -95,7 +127,7 @@ class ConfigFileLoader:
             model_architecture_configs = self._update_dicts_with_new_dict(model_architecture_configs, model_architecture_overrides)
 
             # Resolve the variables
-            model_architecture_configs = self._resolve_variables(model_architecture_configs)
+            model_architecture_configs = ConfigFileLoader.resolve_variables(self.variables, model_architecture_configs)
 
 
         return model_architecture_overrides
@@ -164,7 +196,7 @@ class ConfigFileLoader:
                 experiments[exp_idx] = exp_dict
 
         # Resolve variables
-        experiments = self._resolve_variables(experiments)
+        experiments = ConfigFileLoader.resolve_variables(self.variables, experiments)
 
         # Process the experiments
         processed_experiments = []
@@ -183,7 +215,7 @@ class ConfigFileLoader:
                 experiment = self._update_dicts_with_new_dict(common_experiments_parameters, experiment)
 
                 # Resolve the variable names
-                experiment = self._resolve_variables(experiment)
+                experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
 
             # If we have a dataset params file to load
@@ -195,7 +227,7 @@ class ConfigFileLoader:
                 experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
 
                 # Resolve the variable names
-                experiment = self._resolve_variables(experiment)
+                experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
             processed_experiments.append({experiment_name: experiment, })
 
@@ -257,32 +289,9 @@ class ConfigFileLoader:
         return target
 
 
-    def _resolve_variables(self, target):
-
-        target = copy.deepcopy(target)
-
-        if(isinstance(target, list)):
-            return [self._resolve_variables(x) for x in target]
-
-        elif(isinstance(target, dict)):
-            for key in target.keys():
-                target[key] = self._resolve_variables(target[key])
-
-            return target
-
-        elif(isinstance(target, str)):
-
-            for var_name in self.variables:
-                if(var_name in target): 
-                    target = target.replace(var_name, self.variables[var_name])
-
-            return target
-
-        else:
-            return target
-
 
     def _check_for_unresolved_variables(self, target):
+
 
         if(isinstance(target, dict)):
             for key, value in target.items():
@@ -294,13 +303,27 @@ class ConfigFileLoader:
                 self._check_for_unresolved_variables(value)   
 
         elif(isinstance(target, str)):
+
+            # Exclude any reserved variables by removing them and then replacing them after the check
+            REPLACEMENT_STRING_LEFT = "_-_-_-_-_-_-_-_"
+            REPLACEMENT_STRING_RIGHT = "=-=-=-=-=-=-=-="
+            for reserved_variable in self.RESERVED_VARIABLES:
+                replace_name = reserved_variable.replace("<", REPLACEMENT_STRING_LEFT)
+                replace_name = replace_name.replace(">", REPLACEMENT_STRING_RIGHT)
+                target = target.replace(reserved_variable, replace_name)
+
+            # Do the check
             pattern = re.compile(r"<[A-Za-z0-9_]+>", re.IGNORECASE)
             match_pattern = pattern.match(target)
-            
             if(match_pattern is not None):
                 print("Unresolved variable \"{}\"".format(target))
                 assert(False)
 
-
-
-
+            # Put it back
+            # Exclude any reserved variables by removing them and then replacing them after the check
+            REPLACEMENT_STRING_LEFT = "_-_-_-_-_-_-_-_"
+            REPLACEMENT_STRING_RIGHT = "=-=-=-=-=-=-=-="
+            for reserved_variable in self.RESERVED_VARIABLES:
+                replace_name = reserved_variable.replace("<", REPLACEMENT_STRING_LEFT)
+                replace_name = replace_name.replace(">", REPLACEMENT_STRING_RIGHT)
+                target = target.replace(replace_name, reserved_variable)

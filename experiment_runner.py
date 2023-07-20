@@ -2,6 +2,7 @@
 
 # Python Imports
 import sys
+import copy 
 
 # Package Imports
 import yaml
@@ -10,6 +11,7 @@ import yaml
 from .utils import *
 from .config_file_loader import ConfigFileLoader
 from .device_selector import DeviceSelector
+from .model_saver_loader import ModelSaverLoader
 
 class ExperimentRunner:
     def __init__(self, config_file):
@@ -58,47 +60,66 @@ class ExperimentRunner:
             if(do_run == False):
                 continue
 
-            # Select the device to run on
-            gpu_info_str = device_selector.get_gpu_info_str(indent="\t\t")
-            device = get_mandatory_config("device", experiment_configs, "experiment_configs")
-            device = device_selector.get_device(device)
+            # Get the number of times to run the experiment
+            number_of_runs = get_optional_config_with_default("number_of_runs", experiment_configs, "experiment_configs", default_value=1)
 
-            # Get the save directory and make sure that it exists 
-            save_dir = get_mandatory_config("save_dir", experiment_configs, "experiment_configs")
-            ensure_directory_exists(save_dir)
+            # Run multiple times
+            for run_number in range(number_of_runs):
 
-            # Make the model
-            model = None
+                # Make a run specific variable set
+                variables = dict()
+                variables["<framework_var_run_number>"] = "run_{:03d}".format(run_number)
 
-            # Load the model
+                # Make a copy of the configs for this run
+                experiment_configs_copy = copy.deepcopy(experiment_configs)
 
-            # Print some info
-            print("\n\n")
-            print("----------------------------------------------------------------------")
-            print("----------------------------------------------------------------------")
-            print("Running experiment \"{}\"".format(experiment_name))
-            print("----------------------------------------------------------------------")
+                # Resolve the variables
+                experiment_configs_copy = ConfigFileLoader.resolve_variables(variables, experiment_configs_copy)                
 
-            print("\tGPU Device Info:")
-            print(gpu_info_str)
-            print("")
-            print("\tDevice         : {}".format(device))
-            print("\tSave Directory : {}".format(save_dir))
-            print("")
+                # Select the device to run on
+                gpu_info_str = device_selector.get_gpu_info_str(indent="\t\t")
+                device = get_mandatory_config("device", experiment_configs_copy, "experiment_configs_copy")
+                device = device_selector.get_device(device)
 
-            # Detect if this is a training or evaluation and do the right thing
-            experiment_type = get_mandatory_config("experiment_type", experiment_configs, "experiment_configs")
-            if(experiment_type == "training"):
+                # Get the save directory and make sure that it exists 
+                save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
+                ensure_directory_exists(save_dir)
 
-                # Run the training
-                self._run_training(experiment_name, experiment_configs, save_dir, device, model)
+                # Make the model
+                model = self._create_model(experiment_configs_copy)
 
-            elif(experiment_type == "evaluation"):
-                pass
+                # Load the model!
+                if("pretrained_models" in experiment_configs_copy):
+                    pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
+                    ModelSaverLoader.load_models(model, pretrained_model_configs)
 
-            else:
-                print("Unknown experiment type \"{}\"".format(experiment_type))
-                assert(False)
+                # Print some info
+                print("\n\n")
+                print("----------------------------------------------------------------------")
+                print("----------------------------------------------------------------------")
+                print("Running experiment \"{}\"".format(experiment_name))
+                print("----------------------------------------------------------------------")
+
+                print("\tGPU Device Info:")
+                print(gpu_info_str)
+                print("")
+                print("\tDevice         : {}".format(device))
+                print("\tSave Directory : {}".format(save_dir))
+                print("")
+
+                # Detect if this is a training or evaluation and do the right thing
+                experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
+                if(experiment_type == "training"):
+
+                    # Run the training
+                    self._run_training(experiment_name, experiment_configs_copy, save_dir, device, model)
+
+                elif(experiment_type == "evaluation"):
+                    pass
+
+                else:
+                    print("Unknown experiment type \"{}\"".format(experiment_type))
+                    assert(False)
 
 
 
@@ -139,3 +160,21 @@ class ExperimentRunner:
 
         return dataset
 
+
+
+    def _create_model(self, experiment_configs):
+
+        # Extract the model configs
+        model_configs = get_mandatory_config("model_configs", experiment_configs, "experiment_configs")
+
+        # Check what the main model is
+        main_model_name = get_mandatory_config("main_model", model_configs, "model_configs")
+
+        # Make sure the model has been provided to us
+        assert(main_model_name in self.model_classes)
+
+        # Create the model
+        model_cls = self.model_classes[main_model_name]
+        model = model_cls(model_configs, self.model_architecture_configs)
+
+        return model

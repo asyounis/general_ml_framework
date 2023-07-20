@@ -81,7 +81,7 @@ class DataPlotter:
 
 
         # check if there is something to plot 
-        if((len(dp_obj.raw_values) == 0) or (len(dp_obj.averaged_values) == 0)):
+        if((len(self.raw_values) == 0) or (len(self.averaged_values) == 0)):
             return
 
         # Plot the losses.  This overrides the previous plots
@@ -89,30 +89,30 @@ class DataPlotter:
         ax1 = axes[0,0]
 
         # Plot the Training loss
-        ax1.plot(dp_obj.averaged_values, marker="o", color="red")
+        ax1.plot(self.averaged_values, marker="o", color="red")
 
         # Add labels every so often so we can read the data
-        for i in range(0, len(dp_obj.averaged_values), 10):
-            ax1.text(i, dp_obj.averaged_values[i], "{:.2f}".format(dp_obj.averaged_values[i]))
+        for i in range(0, len(self.averaged_values), 10):
+            ax1.text(i, self.averaged_values[i], "{:.2f}".format(self.averaged_values[i]))
 
         # Plot the trend line if we have enough data
-        if(len(dp_obj.averaged_values) > 5):
-            x = np.arange(0, len(dp_obj.averaged_values), 1)
-            y = np.asarray(dp_obj.averaged_values)
+        if(len(self.averaged_values) > 5):
+            x = np.arange(0, len(self.averaged_values), 1)
+            y = np.asarray(self.averaged_values)
             z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
             ax1.plot(x,p(x),"b--")
 
 
-        ax1.set_xlabel(dp_obj.x_axis_label)
-        ax1.set_ylabel(dp_obj.y_axis_label)
-        ax1.set_title(dp_obj.title)
+        ax1.set_xlabel(self.x_axis_label)
+        ax1.set_ylabel(self.y_axis_label)
+        ax1.set_title(self.title)
         # ax1.legend()
         ax1.get_yaxis().get_major_formatter().set_scientific(False)
 
 
         # Compute Stats to put in the table
-        raw_values_array = np.asarray(dp_obj.raw_values)
+        raw_values_array = np.asarray(self.raw_values)
         mean = np.mean(raw_values_array)
         std = np.std(raw_values_array)
         median = np.median(raw_values_array)
@@ -144,19 +144,19 @@ class DataPlotter:
 
 
         # Save into the save dir, overriding any previously saved plots
-        plt.savefig("{}/{}".format(dp_obj.save_dir, dp_obj.filename))
+        plt.savefig("{}/{}".format(self.save_dir, self.filename))
 
         # Close the figure when we are done to stop matplotlub from complaining
         plt.close('all')
 
 
         # If we should save the raw data then lets save it
-        if(dp_obj.save_raw_data):
+        if(self.save_raw_data):
 
             # Convert to a torch tensor for saving
-            raw_values_torch = torch.FloatTensor(dp_obj.raw_values)
+            raw_values_torch = torch.FloatTensor(self.raw_values)
 
             # Save it
-            torch.save(raw_values_torch, "{}/{}.pt".format(dp_obj.save_dir, dp_obj.filename))
+            torch.save(raw_values_torch, "{}/{}.pt".format(self.save_dir, self.filename))
 
 
