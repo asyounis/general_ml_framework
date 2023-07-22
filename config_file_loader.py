@@ -130,7 +130,7 @@ class ConfigFileLoader:
             model_architecture_configs = ConfigFileLoader.resolve_variables(self.variables, model_architecture_configs)
 
 
-        return model_architecture_overrides
+        return model_architecture_configs
 
 
     def _load_experiment_configs(self, root_configs):

@@ -27,7 +27,7 @@ class BaseTrainer:
         self.validation_dataset = validation_dataset
 
         # Extract the mandatory training configs
-        self.training_configs = experiment_configs["training_configs"]
+        self.training_configs = get_mandatory_config("training_configs", experiment_configs, "experiment_configs")
         self.epochs = get_mandatory_config("epochs", self.training_configs, "training_configs")
         batch_sizes = get_mandatory_config_as_type("batch_sizes", self.training_configs, "training_configs", dict)
         optimizer_configs = get_mandatory_config_as_type("optimizer_configs", self.training_configs, "training_configs", dict)
@@ -60,6 +60,8 @@ class BaseTrainer:
 
         # Move the model to the correct device
         self.model = self.model.to(self.device)
+
+        exit()
 
     def train(self):
 
@@ -272,10 +274,16 @@ class BaseTrainer:
         for model_name in learning_rates.keys():
             
             # Make sure the model exists
-            assert(model_name in self.all_models)
+            if(model_name not in self.all_models):
+                print("WARNING: learning rate for model name \"{}\" was specified but model does not exist... Skipping...".format(model_name))
+                continue
 
             # Extract the learning rate
             lr = learning_rates[model_name]
+
+            # if this is a string then make it lower case so we can case agnostic
+            if(isinstance(lr, str)):
+                lr = lr.lower()
 
             # If the learning rate is frozen then no optimizer is needed
             if(lr == "freeze"):

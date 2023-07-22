@@ -170,11 +170,15 @@ class ExperimentRunner:
         # Check what the main model is
         main_model_name = get_mandatory_config("main_model", model_configs, "model_configs")
 
+        # get the main model type
+        main_model_config = get_mandatory_config(main_model_name, self.model_architecture_configs, "model_architecture_configs")
+        main_model_type = get_mandatory_config("type", main_model_config, "main_model_config")
+
         # Make sure the model has been provided to us
-        assert(main_model_name in self.model_classes)
+        assert(main_model_type in self.model_classes)
 
         # Create the model
-        model_cls = self.model_classes[main_model_name]
+        model_cls = self.model_classes[main_model_type]
         model = model_cls(model_configs, self.model_architecture_configs)
 
         return model
