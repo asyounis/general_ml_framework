@@ -61,8 +61,6 @@ class BaseTrainer:
         # Move the model to the correct device
         self.model = self.model.to(self.device)
 
-        exit()
-
     def train(self):
 
         # Keep track of the best validation loss
