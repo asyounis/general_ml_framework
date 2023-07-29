@@ -12,6 +12,7 @@ from .utils import *
 from .config_file_loader import ConfigFileLoader
 from .device_selector import DeviceSelector
 from .model_saver_loader import ModelSaverLoader
+from .logger import Logger
 
 class ExperimentRunner:
     def __init__(self, config_file):
@@ -77,13 +78,16 @@ class ExperimentRunner:
                 experiment_configs_copy = ConfigFileLoader.resolve_variables(variables, experiment_configs_copy)                
 
                 # Select the device to run on
-                gpu_info_str = device_selector.get_gpu_info_str(indent="\t\t")
+                gpu_info_str = device_selector.get_gpu_info_str(indent="\t")
                 device = get_mandatory_config("device", experiment_configs_copy, "experiment_configs_copy")
                 device = device_selector.get_device(device)
 
                 # Get the save directory and make sure that it exists 
                 save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
                 ensure_directory_exists(save_dir)
+
+                # Create the Logger
+                logger = Logger(save_dir)
 
                 # Make the model
                 model = self._create_model(experiment_configs_copy)
@@ -94,25 +98,25 @@ class ExperimentRunner:
                     ModelSaverLoader.load_models(model, pretrained_model_configs)
 
                 # Print some info
-                print("\n\n")
-                print("----------------------------------------------------------------------")
-                print("----------------------------------------------------------------------")
-                print("Running experiment \"{}\"".format(experiment_name))
-                print("----------------------------------------------------------------------")
+                logger.log("\n\n")
+                logger.log("----------------------------------------------------------------------")
+                logger.log("----------------------------------------------------------------------")
+                logger.log("Running experiment \"{}\"".format(experiment_name))
+                logger.log("----------------------------------------------------------------------")
 
-                print("\tGPU Device Info:")
-                print(gpu_info_str)
-                print("")
-                print("\tDevice         : {}".format(device))
-                print("\tSave Directory : {}".format(save_dir))
-                print("")
+                logger.log("GPU Device Info:")
+                logger.log(gpu_info_str)
+                logger.log("")
+                logger.log("Device         : {}".format(device))
+                logger.log("Save Directory : {}".format(save_dir))
+                logger.log("")
 
                 # Detect if this is a training or evaluation and do the right thing
                 experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
                 if(experiment_type == "training"):
 
                     # Run the training
-                    self._run_training(experiment_name, experiment_configs_copy, save_dir, device, model)
+                    self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device, model)
 
                 elif(experiment_type == "evaluation"):
                     pass
@@ -123,7 +127,7 @@ class ExperimentRunner:
 
 
 
-    def _run_training(self, experiment_name, experiment_configs, save_dir, device, model):
+    def _run_training(self, experiment_name, experiment_configs, save_dir, logger, device, model):
 
         # Get training type
         training_type = get_mandatory_config("training_type", experiment_configs, "experiment_configs")
@@ -140,7 +144,7 @@ class ExperimentRunner:
 
         # Create the trainer
         trainer_cls = self.trainer_classes[training_type]
-        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, device, model, training_dataset, validation_dataset)
+        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, training_dataset, validation_dataset)
 
         # train!!
         trainer.train()

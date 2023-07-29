@@ -3,6 +3,7 @@
 import copy 
 import sys
 import re
+import time
 
 # Package Imports
 import yaml
@@ -12,15 +13,17 @@ from tqdm import tqdm
 # Project Imports
 from ..utils import *
 from .data_plotter import DataPlotter
+from .early_stopping import EarlyStopping
 from ..model_saver_loader import ModelSaverLoader
 
 class BaseTrainer:
-    def __init__(self, experiment_name, experiment_configs, save_dir, device, model,training_dataset, validation_dataset):
+    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model,training_dataset, validation_dataset):
 
         # Save in case we need it
         self.experiment_name = experiment_name
         self.experiment_configs = experiment_configs
         self.save_dir = save_dir
+        self.logger = logger
         self.device = device
         self.model = model
         self.training_dataset = training_dataset
@@ -32,14 +35,12 @@ class BaseTrainer:
         batch_sizes = get_mandatory_config_as_type("batch_sizes", self.training_configs, "training_configs", dict)
         optimizer_configs = get_mandatory_config_as_type("optimizer_configs", self.training_configs, "training_configs", dict)
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
+        early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
         self.accumulate_gradients_counter = get_optional_config_with_default("accumulate_gradients_counter", self.training_configs, "training_configs", default_value=1)
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
-
-        # self.early_stopping_patience = self.training_params["early_stopping_patience"]
-        # self.early_stopping_start_offset = self.training_params["early_stopping_start_offset"]
 
         # create the dataloaders
         self.training_loader = self._create_data_loaders(batch_sizes, self.training_dataset, "training")
@@ -51,6 +52,9 @@ class BaseTrainer:
 
         # Create the optimizer
         self.optimizers, self.models_to_train = self._create_optimizers(optimizer_configs, learning_rates)
+
+        # Construct the early stopping
+        self.early_stopping = EarlyStopping(early_stopping_configs)
 
         # Create the data plotters
         self.data_plotters = self._create_data_plotters()
@@ -70,12 +74,16 @@ class BaseTrainer:
         for epoch in tqdm(range(self.epochs)):
 
             # Do The training pass
-            training_loss = self._do_training_epoch(epoch)
+            training_loss, average_training_time = self._do_training_epoch(epoch)
             self.data_plotters["training_epoch_loss"].add_value(training_loss)
 
             # Do the validation pass
-            validation_loss = self._do_validation_epoch(epoch)
+            validation_loss, average_validation_time = self._do_validation_epoch(epoch)
             self.data_plotters["validation_epoch_loss"].add_value(validation_loss)
+
+            # Log the validation and training times
+            self.logger.log("Average training time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
+            self.logger.log("Average validation time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
 
             # Make all plotters write!
             for data_plotter_name in self.data_plotters:
@@ -90,6 +98,11 @@ class BaseTrainer:
 
             # Save the models
             self.model_saver.save_models(epoch, is_best)
+
+            # Determine if we should early stop
+            self.early_stopping(validation_loss)
+            if(self.early_stopping.do_stop()):
+                break
 
 
     def _do_training_epoch(self, epoch):
@@ -108,14 +121,20 @@ class BaseTrainer:
                     self.all_models[model_name].eval()
 
 
-
         # Keep track of stats needed to compute the average loss
         total_loss = 0
         number_of_losses_to_use_for_average_loss = 0
 
+        # Keep track of some timing information
+        total_time_taken_seconds = 0
+        number_of_losses_to_use_for_average_time = 0
+
         # Go through all the data once
         t = tqdm(iter(self.training_loader), leave=False, total=len(self.training_loader))
         for step, data in enumerate(t):
+
+            # Start the timer
+            start_time = time.time()
 
             # Zero out the gradients in prep for optimization
             for model_name in self.all_models.keys():
@@ -162,17 +181,31 @@ class BaseTrainer:
                 for optimizer in self.optimizers:
                     optimizer.step()
 
-            # Add the loss for the batch so we can do step losses
-            self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+
+            # Stop the timer
+            end_time = time.time()
+
+            # record the elapsed time but skip the first step since there is a JIT compile that may run 
+            # and that can skew the time
+            if(step != 0):
+                total_time_taken_seconds += float(end_time - start_time)
+                number_of_losses_to_use_for_average_time += 1
+
 
             # keep track of the average loss
             total_loss += loss.item() * batch_size
             number_of_losses_to_use_for_average_loss += batch_size
 
+            # Add the loss for the batch so we can do step losses
+            self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+
         # Compute the average loss
         average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
 
-        return average_loss
+        # Compute the average time
+        average_time = float(total_time_taken_seconds) / float(number_of_losses_to_use_for_average_time)
+
+        return average_loss, average_time
 
 
     def _do_validation_epoch(self, epoch):
@@ -188,9 +221,16 @@ class BaseTrainer:
             total_loss = 0
             number_of_losses_to_use_for_average_loss = 0
 
+            # Keep track of some timing information
+            total_time_taken_seconds = 0
+            number_of_losses_to_use_for_average_time = 0
+
             # Go through all the data once
             t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader))
             for step, data in enumerate(t):
+        
+                # Start the timer
+                start_time = time.time()
 
                 # Do the forward pass over the data
                 loss, batch_size = self.do_forward_pass(data)
@@ -199,6 +239,15 @@ class BaseTrainer:
                 if(loss is None):
                     continue
 
+                # Stop the timer
+                end_time = time.time()
+
+                # record the elapsed time but skip the first step since there is a JIT compile that may run 
+                # and that can skew the time
+                if(step != 0):
+                    total_time_taken_seconds += float(end_time - start_time)
+                    number_of_losses_to_use_for_average_time += 1
+
                 # Add the loss for the batch so we can do step losses
                 self.data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
 
@@ -206,10 +255,14 @@ class BaseTrainer:
                 total_loss += loss.item() * batch_size
                 number_of_losses_to_use_for_average_loss += batch_size
 
+
             # Compute the average loss
             average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
 
-            return average_loss
+            # Compute the average time
+            average_time = float(total_time_taken_seconds) / float(number_of_losses_to_use_for_average_time)
+
+            return average_loss, average_time
 
 
     def _create_data_loaders(self, batch_sizes, dataset, dataset_type):
@@ -273,7 +326,7 @@ class BaseTrainer:
             
             # Make sure the model exists
             if(model_name not in self.all_models):
-                print("WARNING: learning rate for model name \"{}\" was specified but model does not exist... Skipping...".format(model_name))
+                self.logger.log("WARNING: learning rate for model name \"{}\" was specified but model does not exist... Skipping...".format(model_name))
                 continue
 
             # Extract the learning rate
