@@ -83,8 +83,12 @@ class ExperimentRunner:
                 device = device_selector.get_device(device)
 
                 # Get the save directory and make sure that it exists 
+                # Note we add the run number to the save dir
                 save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
+                save_dir = "{}/run_{:04d}/".format(save_dir, run_number)
                 ensure_directory_exists(save_dir)
+
+
 
                 # Create the Logger
                 logger = Logger(save_dir)

@@ -65,6 +65,11 @@ class BaseTrainer:
         # Move the model to the correct device
         self.model = self.model.to(self.device)
 
+        # Keep track of the time averages
+        self.timing_data = dict()
+        self.timing_data["average_training_time"] = []
+        self.timing_data["average_validation_time"] = []
+
     def train(self):
 
         # Keep track of the best validation loss
@@ -81,9 +86,16 @@ class BaseTrainer:
             validation_loss, average_validation_time = self._do_validation_epoch(epoch)
             self.data_plotters["validation_epoch_loss"].add_value(validation_loss)
 
-            # Log the validation and training times
-            self.logger.log("Average training time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
-            self.logger.log("Average validation time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
+            # Log the validation and training times once after the first epoch so that 
+            # The system has stabilized enough
+            if(epoch == 1):
+                self.logger.log("Average training time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
+                self.logger.log("Average validation time per batch: {:04f} seconds".format(average_validation_time), print_to_terminal=False)
+
+            # We should keep track of the time averages and save it
+            self.timing_data["average_training_time"].append(average_training_time)
+            self.timing_data["average_validation_time"].append(average_validation_time)
+            torch.save(self.time_averages, "{}/timing_data.pt".format(self.timing_data))
 
             # Make all plotters write!
             for data_plotter_name in self.data_plotters:
@@ -106,7 +118,8 @@ class BaseTrainer:
 
 
     def _do_training_epoch(self, epoch):
-        
+
+
         # Freeze the models that we are not training. So if a model 
         # has a batchnorm layer, in eval mode the batchnorm will be frozen
         if("full_model" in self.models_to_train):
@@ -114,11 +127,16 @@ class BaseTrainer:
             for model_name in self.all_models.keys():
                 self.all_models[model_name].train()
         else:
+
+            if(len(self.models_to_train) != 0):
+                self.model.train()
+
             for model_name in self.all_models.keys():
                 if(model_name in self.models_to_train):
                     self.all_models[model_name].train()
                 else:
-                    self.all_models[model_name].eval()
+                    if(self.all_models[model_name] != self.model):
+                        self.all_models[model_name].eval()
 
 
         # Keep track of stats needed to compute the average loss
