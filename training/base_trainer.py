@@ -92,10 +92,11 @@ class BaseTrainer:
                 self.logger.log("Average training time per batch: {:04f} seconds".format(average_training_time), print_to_terminal=False)
                 self.logger.log("Average validation time per batch: {:04f} seconds".format(average_validation_time), print_to_terminal=False)
 
-            # We should keep track of the time averages and save it
-            self.timing_data["average_training_time"].append(average_training_time)
-            self.timing_data["average_validation_time"].append(average_validation_time)
-            torch.save(self.time_averages, "{}/timing_data.pt".format(self.timing_data))
+            if(epoch > 0):
+                # We should keep track of the time averages and save it
+                self.timing_data["average_training_time"].append(average_training_time)
+                self.timing_data["average_validation_time"].append(average_validation_time)
+                torch.save(self.timing_data, "{}/timing_data.pt".format(self.save_dir))
 
             # Make all plotters write!
             for data_plotter_name in self.data_plotters:
