@@ -297,7 +297,7 @@ class BaseTrainer:
 
 
         # Check if the dataset has a custom collate function we should be using
-        has_custom_collate_function = getattr(self, "get_collate_function", None)
+        has_custom_collate_function = getattr(dataset, "get_collate_function", None)
         if callable(has_custom_collate_function):
             custom_collate_function = dataset.get_collate_function()
         else:
