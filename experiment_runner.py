@@ -176,7 +176,7 @@ class ExperimentRunner:
         model_configs = get_mandatory_config("model_configs", experiment_configs, "experiment_configs")
 
         # Check what the main model is
-        main_model_name = get_mandatory_config("main_model", model_configs, "model_configs")
+        main_model_name = get_mandatory_config("main_model_name", model_configs, "model_configs")
 
         # get the main model type
         main_model_config = get_mandatory_config(main_model_name, self.model_architecture_configs, "model_architecture_configs")
