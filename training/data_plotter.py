@@ -12,7 +12,7 @@ from ..utils import *
 
 
 class DataPlotter:
-    def __init__(self, title, x_axis_label, y_axis_label, save_dir, filename, moving_average_length=1, plot_modulo=1000, save_raw_data=False):
+    def __init__(self, title, x_axis_label, y_axis_label, save_dir, filename, moving_average_length=1, plot_modulo=250, save_raw_data=False):
 
         # Save all the info we need to keep around
         self.title = title
