@@ -6,6 +6,7 @@ import copy
 
 # Package Imports
 import yaml
+import torch
 
 # Project Imports
 from .utils import *
@@ -88,8 +89,6 @@ class ExperimentRunner:
                 save_dir = "{}/run_{:04d}/".format(save_dir, run_number)
                 ensure_directory_exists(save_dir)
 
-
-
                 # Create the Logger
                 logger = Logger(save_dir)
 
@@ -100,6 +99,12 @@ class ExperimentRunner:
                 if("pretrained_models" in experiment_configs_copy):
                     pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
                     ModelSaverLoader.load_models(model, pretrained_model_configs)
+
+                # If we have more than 1 Device then we should be in parallel mode
+                if(isinstance(device, list)):
+                    assert(len(device) > 1)
+                    model = torch.nn.DataParallel(model, device_ids=device)
+
 
                 # Print some info
                 logger.log("\n\n")

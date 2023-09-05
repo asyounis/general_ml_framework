@@ -19,7 +19,27 @@ class DeviceSelector:
         device = None
 
         # Get the device we should use based on what the user specified
-        if(device_selection_string == "cuda_auto"):
+        if("cuda_auto_multi" in device_selection_string):
+
+            # Get all the free GPUs:
+            free_gpus = self._get_free_gpus()
+
+            # Get how many gpus we need
+            num_gpus_needed = int(device_selection_string.split(":")[-1])
+
+            # Make sure we have enough
+            if(num_gpus_needed > len(free_gpus)):
+                print("Not enough available GPUs for request.... Exiting")
+                assert(False)
+
+            # Select only the number we need
+            device = free_gpus[:num_gpus_needed]
+
+            # If we have 1 GPU then rename it into a pytorch format
+            if(len(device) == 1):
+                device = "cuda:{}".format(device[0])
+
+        elif(device_selection_string == "cuda_auto"):
 
             # Get the GPU index to use
             device_idx = self._get_gpu_to_use()
@@ -29,8 +49,6 @@ class DeviceSelector:
 
         else:
             device = device_selection_string
-
-
 
         return device
 
@@ -46,9 +64,6 @@ class DeviceSelector:
         # Pack into a pretty table
         table = PrettyTable()
         table.field_names = ["Device", "Num. Running Processes", "Used VRAM", "Free VRAM", "Total Memory"]
-
-
-
 
         for device_info in device_infos:
             row_data = []
@@ -68,6 +83,28 @@ class DeviceSelector:
         return table_str
 
 
+    def _get_free_gpus(self):
+
+        # Get the labels for each of the devices
+        all_devices = self._get_all_device_ids()
+
+        # Get all the data
+        device_infos = self._get_all_device_infos()
+
+        free_gpus = []
+
+        # Go through all the devices and
+        for i, device_info in enumerate(device_infos):
+
+            # Extract the info we care about
+            free_memory = device_info["free_memory"]
+            num_compute_processes_running = device_info["num_compute_processes_running"]
+
+            # If it has free memory then we can use it
+            if((free_memory >= (500 * 1024 * 1024)) and (num_compute_processes_running < 1)):
+                free_gpus.append(i)
+
+        return free_gpus
 
     def _get_gpu_to_use(self):
 
@@ -109,7 +146,9 @@ class DeviceSelector:
         return gpu_select_index
 
 
-        
+
+
+
     def _get_all_device_ids(self):
 
 

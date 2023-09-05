@@ -47,8 +47,13 @@ class BaseTrainer:
         self.validation_loader = self._create_data_loaders(batch_sizes, self.validation_dataset, "validation")
 
         # get all the models
-        self.all_models = self.model.get_submodels()
-        self.all_models["full_model"] = self.model
+
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            self.all_models = self.model.module.get_submodels()
+            self.all_models["full_model"] = self.model.module
+        else:
+            self.all_models = self.model.get_submodels()
+            self.all_models["full_model"] = self.model
 
         # Create the optimizer
         self.optimizers, self.models_to_train = self._create_optimizers(optimizer_configs, learning_rates)
@@ -63,7 +68,10 @@ class BaseTrainer:
         self.model_saver = ModelSaverLoader(self.all_models, self.save_dir)
 
         # Move the model to the correct device
-        self.model = self.model.to(self.device)
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            self.model = self.model.to(self.device[0])
+        else:
+            self.model = self.model.to(self.device)
 
         # Keep track of the time averages
         self.timing_data = dict()
@@ -127,6 +135,7 @@ class BaseTrainer:
             assert(len(self.models_to_train) == 1)
             for model_name in self.all_models.keys():
                 self.all_models[model_name].train()
+
         else:
 
             if(len(self.models_to_train) != 0):
@@ -136,9 +145,12 @@ class BaseTrainer:
                 if(model_name in self.models_to_train):
                     self.all_models[model_name].train()
                 else:
-                    if(self.all_models[model_name] != self.model):
-                        self.all_models[model_name].eval()
-
+                    if(isinstance(self.model, torch.nn.DataParallel)):
+                        if(self.all_models[model_name] != self.model.module):
+                            self.all_models[model_name].eval()
+                    else:
+                        if(self.all_models[model_name] != self.model):
+                            self.all_models[model_name].eval()
 
         # Keep track of stats needed to compute the average loss
         total_loss = 0
@@ -148,58 +160,33 @@ class BaseTrainer:
         total_time_taken_seconds = 0
         number_of_losses_to_use_for_average_time = 0
 
+        # Create an iterator 
+        training_loader_iter = iter(self.training_loader)
+
+        # Do a training step so we can get the compiling out of the way so we can have accurate ETA info
+        data = next(training_loader_iter)
+        loss, batch_size = self._do_training_step(0, data)
+        assert(loss is not None)
+
+        # keep track of the average loss
+        total_loss += loss.item() * batch_size
+        number_of_losses_to_use_for_average_loss += batch_size
+        self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+
         # Go through all the data once
-        t = tqdm(iter(self.training_loader), leave=False, total=len(self.training_loader))
-        for step, data in enumerate(t):
+        t = tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1)
+        for step_tmp, data in enumerate(t):
+
+            # Add 1 to account for the step we already took
+            step = step_tmp + 1
 
             # Start the timer
             start_time = time.time()
 
-            # Zero out the gradients in prep for optimization
-            for model_name in self.all_models.keys():
-                self.all_models[model_name].zero_grad()
-
-            # Do the forward pass over the data
-            loss, batch_size = self.do_forward_pass(data)
-
-            # If the loss is not valid then move on
+            # Do a training step
+            loss, batch_size = self._do_training_step(step, data)
             if(loss is None):
                 continue
-
-            # Compute the gradient
-            loss.backward()
-
-            # Compute the gradient norm for the models and add it to the data plotters
-            for model_name in self.all_models.keys():
-
-                # We want L2 Norm
-                norm_type = 2
-
-                # Compute the gradient norm
-                norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
-
-                # if there is no norm then we cant compute the norm
-                if(len(norm) == 0):
-                    continue
-
-                # Finish computing the norm 
-                gradient_norm = torch.norm(torch.stack(norm) , norm_type)
-
-                # Add it to the data plotter
-                data_plotter_name = "gradient_norm_{}".format(model_name)
-                self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
-
-            # Check if we are in a condition to take an optimization step and if so take the step
-            if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
-
-                # if we have a gradient clipping value then do the clipping
-                if(self.gradient_clip_value is not None):
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_value)
-
-                # Take an optimization step
-                for optimizer in self.optimizers:
-                    optimizer.step()
-
 
             # Stop the timer
             end_time = time.time()
@@ -225,6 +212,56 @@ class BaseTrainer:
         average_time = float(total_time_taken_seconds) / float(number_of_losses_to_use_for_average_time)
 
         return average_loss, average_time
+
+
+    def _do_training_step(self, step, data):
+        
+        # Zero out the gradients in prep for optimization
+        for model_name in self.all_models.keys():
+            self.all_models[model_name].zero_grad()
+
+        # Do the forward pass over the data
+        loss, batch_size = self.do_forward_pass(data)
+
+        # If the loss is not valid then move on
+        if(loss is None):
+            return None, None
+
+        # Compute the gradient
+        loss.backward()
+
+        # Compute the gradient norm for the models and add it to the data plotters
+        for model_name in self.all_models.keys():
+
+            # We want L2 Norm
+            norm_type = 2
+
+            # Compute the gradient norm
+            norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
+
+            # if there is no norm then we cant compute the norm
+            if(len(norm) == 0):
+                return None, None
+
+            # Finish computing the norm 
+            gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+
+            # Add it to the data plotter
+            data_plotter_name = "gradient_norm_{}".format(model_name)
+            self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
+
+        # Check if we are in a condition to take an optimization step and if so take the step
+        if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
+
+            # if we have a gradient clipping value then do the clipping
+            if(self.gradient_clip_value is not None):
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_value)
+
+            # Take an optimization step
+            for optimizer in self.optimizers:
+                optimizer.step()
+
+        return loss, batch_size
 
 
     def _do_validation_epoch(self, epoch):
@@ -309,7 +346,7 @@ class BaseTrainer:
         else:
             shuffle_data = False
 
-        # Create the dataloader
+        # Create the data-loader
         dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
 
         return dataloader
