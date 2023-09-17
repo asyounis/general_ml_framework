@@ -92,8 +92,15 @@ class DataPlotter:
         ax1.plot(self.averaged_values, marker="o", color="red")
 
         # Add labels every so often so we can read the data
-        for i in range(0, len(self.averaged_values), 10):
+        # for i in range(0, len(self.averaged_values), 10):
+            # ax1.text(i, self.averaged_values[i], "{:.2f}".format(self.averaged_values[i]))
+
+        max_number_of_text_labels = 100
+        number_of_text_labels = min(max_number_of_text_labels, len(self.averaged_values))
+        step = len(self.averaged_values) // number_of_text_labels
+        for i in range(0, len(self.averaged_values), step):
             ax1.text(i, self.averaged_values[i], "{:.2f}".format(self.averaged_values[i]))
+
 
         # Plot the trend line if we have enough data
         if(len(self.averaged_values) > 5):
