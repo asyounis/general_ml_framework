@@ -34,6 +34,9 @@ class ExperimentRunner:
         # The list of trainers: trainer name -> trainer class
         self.trainer_classes = dict()
 
+        # The list of evaluators: evaluator name -> evaluator class
+        self.evaluator_classes = dict()
+
     def add_dataset(self, name, cls):
         self.dataset_classes[name] = cls
 
@@ -42,6 +45,9 @@ class ExperimentRunner:
 
     def add_trainer(self, name, cls):
         self.trainer_classes[name] = cls
+
+    def add_evaluator(self, name, cls):
+        self.evaluator_classes[name] = cls
 
     def run(self):
 
@@ -68,6 +74,7 @@ class ExperimentRunner:
             # Run multiple times
             for run_number in range(number_of_runs):
 
+
                 # Make a run specific variable set
                 variables = dict()
                 variables["<framework_var_run_number>"] = "run_{:03d}".format(run_number)
@@ -92,20 +99,6 @@ class ExperimentRunner:
                 # Create the Logger
                 logger = Logger(save_dir)
 
-                # Make the model
-                model = self._create_model(experiment_configs_copy)
-
-                # Load the model!
-                if("pretrained_models" in experiment_configs_copy):
-                    pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
-                    ModelSaverLoader.load_models(model, pretrained_model_configs)
-
-                # If we have more than 1 Device then we should be in parallel mode
-                if(isinstance(device, list)):
-                    assert(len(device) > 1)
-                    model = torch.nn.DataParallel(model, device_ids=device)
-
-
                 # Print some info
                 logger.log("\n\n")
                 logger.log("----------------------------------------------------------------------")
@@ -113,6 +106,7 @@ class ExperimentRunner:
                 logger.log("Running experiment \"{}\"".format(experiment_name))
                 logger.log("----------------------------------------------------------------------")
 
+                # Log some some important things
                 logger.log("GPU Device Info:")
                 logger.log(gpu_info_str)
                 logger.log("")
@@ -120,15 +114,27 @@ class ExperimentRunner:
                 logger.log("Save Directory : {}".format(save_dir))
                 logger.log("")
 
+                # Make the model
+                model = self._create_model(experiment_configs_copy)
+
+                # Load the model!
+                if("pretrained_models" in experiment_configs_copy):
+                    pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
+                    ModelSaverLoader.load_models(model, pretrained_models_configs)
+
+                # If we have more than 1 Device then we should be in parallel mode
+                if(isinstance(device, list)):
+                    assert(len(device) > 1)
+                    model = torch.nn.DataParallel(model, device_ids=device)
+
+
                 # Detect if this is a training or evaluation and do the right thing
                 experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
                 if(experiment_type == "training"):
-
-                    # Run the training
                     self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device, model)
 
                 elif(experiment_type == "evaluation"):
-                    pass
+                    self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device, model)
 
                 else:
                     print("Unknown experiment type \"{}\"".format(experiment_type))
@@ -157,6 +163,27 @@ class ExperimentRunner:
 
         # train!!
         trainer.train()
+
+    def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device, model):
+
+        # Get evaluation type
+        evaluation_type = get_mandatory_config("evaluation_type", experiment_configs, "experiment_configs")
+
+        # Make sure we have that trainer
+        if(evaluation_type not in self.evaluator_classes):
+            print("Unknown trainer type \"{}\"".format(evaluation_type))
+            assert(False)
+
+        # Create the datasets
+        dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
+        evaluation = self._create_dataset(dataset_configs, "evaluation")
+
+        # Create the trainer
+        evaluator_cls = self.evaluator_classes[evaluation_type]
+        evaluator = evaluator_cls(experiment_name, experiment_configs, save_dir, logger, device, model, evaluation, validation_dataset)
+
+        # train!!
+        evaluator.evaluate()
 
 
     def _create_dataset(self, dataset_configs, dataset_type):

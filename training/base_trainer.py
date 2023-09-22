@@ -346,6 +346,18 @@ class BaseTrainer:
         else:
             shuffle_data = False
 
+        # shuffle_data = False
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+        # print("shuffle_data = False")
+
+
         # Create the data-loader
         dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
 

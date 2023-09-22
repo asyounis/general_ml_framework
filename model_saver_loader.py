@@ -8,6 +8,7 @@ import torch
 from .utils import *
 
 
+
 class ModelSaverLoader:
 	def __init__(self, models_dict, save_dir):
 			
@@ -43,7 +44,7 @@ class ModelSaverLoader:
 		# Not the full model so we are good!
 
 		# Load the internal models
-		internal_models = model.get_internal_models()
+		internal_models = model.get_submodels()
 		for model_name in internal_models.keys():
 
 			# Nothing to load
