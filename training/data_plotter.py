@@ -167,3 +167,51 @@ class DataPlotter:
             torch.save(raw_values_torch, "{}/{}.pt".format(self.save_dir, self.filename))
 
 
+
+
+
+    def get_save_dict(self):
+        '''
+            Get the save dict so that we can use to load this data plotter from a save
+
+            Returns:
+                The save dict
+        ''' 
+
+        save_dict = dict()
+        save_dict["title"] = self.title
+        save_dict["x_axis_label"] = self.x_axis_label
+        save_dict["y_axis_label"] = self.y_axis_label
+        save_dict["save_dir"] = self.save_dir
+        save_dict["filename"] = self.filename
+        save_dict["moving_average_length"] = self.moving_average_length
+        save_dict["plot_modulo"] = self.plot_modulo
+        save_dict["save_raw_data"] = self.save_raw_data
+        save_dict["raw_values"] = self.raw_values
+        save_dict["averaged_values"] = self.averaged_values
+        save_dict["moving_aveage_buffer"] = self.moving_aveage_buffer
+        save_dict["count_since_last_save"] = self.count_since_last_save
+
+        return save_dict
+
+    def load_from_dict(self, saved_dict):
+        '''
+            Load this plotter from a dict
+
+            Parameters:
+                saved_dict: The dict to load from
+        ''' 
+        
+         self.title = saved_dict["title"] 
+         self.x_axis_label = saved_dict["x_axis_label"] 
+         self.y_axis_label = saved_dict["y_axis_label"] 
+         self.save_dir = saved_dict["save_dir"] 
+         self.filename = saved_dict["filename"] 
+         self.moving_average_length = saved_dict["moving_average_length"] 
+         self.plot_modulo = saved_dict["plot_modulo"] 
+         self.save_raw_data = saved_dict["save_raw_data"] 
+         self.raw_values = saved_dict["raw_values"] 
+         self.averaged_values = saved_dict["averaged_values"] 
+         self.moving_aveage_buffer = saved_dict["moving_aveage_buffer"] 
+         self.count_since_last_save = saved_dict["count_since_last_save"] 
+        

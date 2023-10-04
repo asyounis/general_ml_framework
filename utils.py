@@ -36,8 +36,6 @@ def get_optional_config_with_default(config_name, config_dict, config_dict_name,
     return config_dict[config_name]
 
 
-
-
 def ensure_directory_exists(directory):
     '''
         Makes sure a directory exists.  If it does not exist then the directory is created

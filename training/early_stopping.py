@@ -51,3 +51,40 @@ class EarlyStopping():
 
     def do_stop(self):
         return self.early_stop
+
+
+    def get_save_dict(self):
+        '''
+            Get the save dict so that we can use to load this object from a save
+
+            Returns:
+                The save dict
+        ''' 
+
+        save_dict = dict()
+        save_dict["patience"] = self.patience
+        save_dict["min_delta"] = self.min_delta
+        save_dict["start_offset"] = self.start_offset
+        save_dict["max_lr_change"] = self.max_lr_change
+        save_dict["counter"] = self.counter
+        save_dict["best_loss"] = self.best_loss
+        save_dict["early_stop"] = self.early_stop
+        save_dict["lr_change_counter"] = self.lr_change_counter
+        return save_dict
+
+    def load_from_dict(self, saved_dict):
+        '''
+            Load this object from a dict
+
+            Parameters:
+                saved_dict: The dict to load from
+        ''' 
+
+        self.patience = saved_dict["patience"]
+        self.min_delta = saved_dict["min_delta"]
+        self.start_offset = saved_dict["start_offset"]
+        self.max_lr_change = saved_dict["max_lr_change"]
+        self.counter = saved_dict["counter"]
+        self.best_loss = saved_dict["best_loss"]
+        self.early_stop = saved_dict["early_stop"]
+        self.lr_change_counter = saved_dict["lr_change_counter"]

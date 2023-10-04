@@ -36,3 +36,10 @@ class Logger:
 		with open(self.output_file, "a") as f:
 			f.write(text)
 			f.write("\n")
+
+
+	def log_warning(text, print_to_terminal=True)
+
+		self.log("WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING", print_to_terminal=print_to_terminal)
+		self.log(text, print_to_terminal=print_to_terminal)
+		self.log("WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING", print_to_terminal=print_to_terminal)
