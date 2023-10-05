@@ -48,6 +48,14 @@ class BaseTrainer:
         self.training_loader = self._create_data_loaders(batch_sizes, self.training_dataset, "training")
         self.validation_loader = self._create_data_loaders(batch_sizes, self.validation_dataset, "validation")
 
+        # get all the models
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            self.all_models = self.model.module.get_submodels()
+            self.all_models["full_model"] = self.model.module
+        else:
+            self.all_models = self.model.get_submodels()
+            self.all_models["full_model"] = self.model
+
         # Create the optimizer
         self.optimizers = self._create_optimizers(optimizer_configs, learning_rates)
 
@@ -68,13 +76,6 @@ class BaseTrainer:
         # Load from the checkpoint
         self._load_from_checkpoint()
 
-        # get all the models
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            self.all_models = self.model.module.get_submodels()
-            self.all_models["full_model"] = self.model.module
-        else:
-            self.all_models = self.model.get_submodels()
-            self.all_models["full_model"] = self.model
 
         # Create the model saver
         self.model_saver = ModelSaverLoader(self.all_models, self.save_dir)
@@ -512,7 +513,7 @@ class BaseTrainer:
 
 
         # Save the early stopping
-        checkpoint_dict["early_stopping"] = self.early_stopping.get_state_dict()
+        checkpoint_dict["early_stopping"] = self.early_stopping.get_save_dict()
 
         # Save the timing data
         checkpoint_dict["timing_data"] = self.timing_data
@@ -538,7 +539,7 @@ class BaseTrainer:
 
         # Log what we did!
         log_text = "Saved checkpoint to \"{}\"".format(checkpoint_file)
-        self.logger.log(log_text):
+        self.logger.log(log_text)
 
 
 
@@ -560,6 +561,7 @@ class BaseTrainer:
         # Get the latest checkpoint to load
         all_checkpoint_files = os.listdir(checkpoint_dir)
         if(len(all_checkpoint_files) == 0):
+            return 
 
         # Convert it to ints so we can select the largest one
         checkpointed_epochs = [s.replace(".pt", "").replace("checkpoint_epoch_", "") for s in all_checkpoint_files]
@@ -595,9 +597,7 @@ class BaseTrainer:
 
         # Log since we are loading the state dict!
         log_text = "Loading checkpoint file: \"{}\"".format(checkpoint_file)
-        self.logger.log(log_text):
-
-
+        self.logger.log(log_text)
 
         # Load the data plotters
         data_plotters_save_dicts = checkpoint_dict["data_plotters"]

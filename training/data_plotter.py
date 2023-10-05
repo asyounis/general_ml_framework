@@ -202,16 +202,16 @@ class DataPlotter:
                 saved_dict: The dict to load from
         ''' 
         
-         self.title = saved_dict["title"] 
-         self.x_axis_label = saved_dict["x_axis_label"] 
-         self.y_axis_label = saved_dict["y_axis_label"] 
-         self.save_dir = saved_dict["save_dir"] 
-         self.filename = saved_dict["filename"] 
-         self.moving_average_length = saved_dict["moving_average_length"] 
-         self.plot_modulo = saved_dict["plot_modulo"] 
-         self.save_raw_data = saved_dict["save_raw_data"] 
-         self.raw_values = saved_dict["raw_values"] 
-         self.averaged_values = saved_dict["averaged_values"] 
-         self.moving_aveage_buffer = saved_dict["moving_aveage_buffer"] 
-         self.count_since_last_save = saved_dict["count_since_last_save"] 
+        self.title = saved_dict["title"] 
+        self.x_axis_label = saved_dict["x_axis_label"] 
+        self.y_axis_label = saved_dict["y_axis_label"] 
+        self.save_dir = saved_dict["save_dir"] 
+        self.filename = saved_dict["filename"] 
+        self.moving_average_length = saved_dict["moving_average_length"] 
+        self.plot_modulo = saved_dict["plot_modulo"] 
+        self.save_raw_data = saved_dict["save_raw_data"] 
+        self.raw_values = saved_dict["raw_values"] 
+        self.averaged_values = saved_dict["averaged_values"] 
+        self.moving_aveage_buffer = saved_dict["moving_aveage_buffer"] 
+        self.count_since_last_save = saved_dict["count_since_last_save"] 
         
