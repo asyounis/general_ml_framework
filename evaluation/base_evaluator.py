@@ -72,11 +72,8 @@ class BaseEvaluator:
             self._do_qualitative_evaluation()
 
 
-
-
     def do_forward_pass(self, data):
         raise NotImplemented
-
 
 
     def _do_quantitative_evaluation(self):
@@ -115,20 +112,16 @@ class BaseEvaluator:
             for metric_name in metrics.keys():
                 metrics[metric_name].add_values(outputs, data)
 
-            if(step > 10):
-                break
-
         # Save the metric data
         metric_pretty_printer = MetricPrettyPrinter(self.logger, self.quantitative_save_dir)
         metric_pretty_printer.print_metrics(metrics)
+
 
     def _do_qualitative_evaluation(self):
 
         # Check if we need to do this evaluation part
         if(self.qualitative_config["do_run"] == False):
             return
-
-
 
 
     def _create_data_loaders(self, batch_sizes, num_cpu_cores_for_dataloader, dataset, dataset_type):
@@ -153,7 +146,6 @@ class BaseEvaluator:
         dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, num_workers=num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
 
         return dataloader
-
 
 
     def _create_metrics(self, metric_configs, metrics_classes):
@@ -183,3 +175,5 @@ class BaseEvaluator:
             metrics[metric_name] = metric
             
         return metrics
+
+    
