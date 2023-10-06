@@ -8,13 +8,13 @@ import torch
 from .utils import *
 
 
-
 class ModelSaverLoader:
-	def __init__(self, models_dict, save_dir):
+	def __init__(self, models_dict, save_dir, logger):
 			
 		# Save for later
 		self.models_dict = models_dict
 		self.save_dir = save_dir
+		self.logger = logger
 
 	def save_models(self, epoch, is_best):
 
@@ -27,8 +27,8 @@ class ModelSaverLoader:
 			model_save_dir = "{}/models/best/".format(self.save_dir, epoch)
 			self._save_models_in_dir(model_save_dir)
 
-
-	def load_models(model, pretrained_model_configs):
+	@staticmethod 
+	def load_models(model, pretrained_model_configs, logger):
 
 		# If we are to load the full model then load it but make sure no other models have been specified
 		if("full_model" in pretrained_model_configs):
@@ -38,7 +38,7 @@ class ModelSaverLoader:
 			load_file = pretrained_model_configs["full_model"]
 			state_dict = torch.load(load_file, map_location="cpu")
 			model.load_state_dict(state_dict)
-			print("Loading \"Full Model\"")
+			logger.log("Loading \"Full Model\"")
 			return
 
 		# Not the full model so we are good!
@@ -55,7 +55,7 @@ class ModelSaverLoader:
 			load_file = pretrained_model_configs[model_name]
 			state_dict = torch.load(load_file, map_location="cpu")
 			internal_models[model_name].load_state_dict(state_dict)
-			print("Loading \"{}\"".format(model_name))
+			logger.log("Loading \"{}\"".format(model_name))
 
 
 	def _save_models_in_dir(self, directory):

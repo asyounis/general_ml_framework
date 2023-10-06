@@ -37,6 +37,9 @@ class ExperimentRunner:
         # The list of evaluators: evaluator name -> evaluator class
         self.evaluator_classes = dict()
 
+        # The list of metrics: metric name -> metric class
+        self.metric_classes = dict()
+
     def add_dataset(self, name, cls):
         self.dataset_classes[name] = cls
 
@@ -48,6 +51,10 @@ class ExperimentRunner:
 
     def add_evaluator(self, name, cls):
         self.evaluator_classes[name] = cls
+
+    def add_metric(self, name , cls):
+        self.metric_classes[name] = cls
+
 
     def run(self):
 
@@ -77,7 +84,7 @@ class ExperimentRunner:
 
                 # Make a run specific variable set
                 variables = dict()
-                variables["<framework_var_run_number>"] = "run_{:03d}".format(run_number)
+                variables["<framework_var_run_number>"] = "run_{:04d}".format(run_number)
 
                 # Make a copy of the configs for this run
                 experiment_configs_copy = copy.deepcopy(experiment_configs)
@@ -120,7 +127,7 @@ class ExperimentRunner:
                 # Load the model!
                 if("pretrained_models" in experiment_configs_copy):
                     pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
-                    ModelSaverLoader.load_models(model, pretrained_models_configs)
+                    ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
 
                 # If we have more than 1 Device then we should be in parallel mode
                 if(isinstance(device, list)):
@@ -171,18 +178,18 @@ class ExperimentRunner:
 
         # Make sure we have that trainer
         if(evaluation_type not in self.evaluator_classes):
-            print("Unknown trainer type \"{}\"".format(evaluation_type))
+            print("Unknown evaluation type \"{}\"".format(evaluation_type))
             assert(False)
 
         # Create the datasets
         dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
-        evaluation = self._create_dataset(dataset_configs, "evaluation")
+        evaluation_dataset = self._create_dataset(dataset_configs, "evaluation")
 
         # Create the trainer
         evaluator_cls = self.evaluator_classes[evaluation_type]
-        evaluator = evaluator_cls(experiment_name, experiment_configs, save_dir, logger, device, model, evaluation, validation_dataset)
+        evaluator = evaluator_cls(experiment_name, experiment_configs, save_dir, logger, device, model, evaluation_dataset, self.metric_classes)
 
-        # train!!
+        # evaluate!!
         evaluator.evaluate()
 
 

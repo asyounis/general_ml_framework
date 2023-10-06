@@ -78,7 +78,7 @@ class BaseTrainer:
 
 
         # Create the model saver
-        self.model_saver = ModelSaverLoader(self.all_models, self.save_dir)
+        self.model_saver = ModelSaverLoader(self.all_models, self.save_dir, self.logger)
 
         # Move the model to the correct device
         if(isinstance(self.model, torch.nn.DataParallel)):
@@ -624,3 +624,8 @@ class BaseTrainer:
             self.model.module.load_state_dict(model_state_dict)
         else:
             self.model.load_model_state_dict(state_dict)
+
+
+
+    def do_forward_pass(self, data):
+        raise NotImplemented
