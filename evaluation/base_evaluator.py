@@ -56,7 +56,6 @@ class BaseEvaluator:
             self.model = self.model.to(self.device)
 
 
-
     def evaluate(self):
 
         # Do everything in evaluation mode (aka with no gradients)
@@ -176,4 +175,3 @@ class BaseEvaluator:
             
         return metrics
 
-    
