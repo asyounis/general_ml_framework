@@ -115,6 +115,9 @@ class BaseTrainer:
                 self.timing_data["average_validation_time"].append(average_validation_time)
                 torch.save(self.timing_data, "{}/timing_data.pt".format(self.save_dir))
 
+            # Call any project specific actions
+            self.project_specific_end_of_epoch_fn(epoch)
+
             # Make all plotters write!
             for data_plotter_name in self.data_plotters:
                 self.data_plotters[data_plotter_name].plot_and_save()
@@ -221,6 +224,9 @@ class BaseTrainer:
 
             # Add the loss for the batch so we can do step losses
             self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+
+            # Do any project specific actions 
+            self.project_specific_end_of_training_batch_fn(epoch, step_tmp)
 
         # Compute the average loss
         average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
@@ -485,6 +491,13 @@ class BaseTrainer:
             all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name))
 
 
+        # Get the project specific data plotters
+        project_specific_dataplotters = self.create_project_specific_dataplotters()
+        for data_plotter_name in project_specific_dataplotters:
+            assert(data_plotter_name not in all_data_plotters)    
+            all_data_plotters[data_plotter_name] = project_specific_dataplotters[data_plotter_name] 
+
+
         return all_data_plotters
 
 
@@ -629,3 +642,14 @@ class BaseTrainer:
 
     def do_forward_pass(self, data):
         raise NotImplemented
+
+
+    def create_project_specific_dataplotters(self):
+        return dict()
+
+
+    def project_specific_end_of_epoch_fn(self, epoch):
+        return
+
+    def project_specific_end_of_training_batch_fn(self, epoch, step):
+        return
