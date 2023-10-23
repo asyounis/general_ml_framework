@@ -74,6 +74,9 @@ class BaseEvaluator:
     def do_forward_pass(self, data):
         raise NotImplemented
 
+    def render_model_output_Data(self, save_dir, render_number, data, model_output):
+        raise NotImplemented
+
 
     def _do_quantitative_evaluation(self):
 
@@ -121,6 +124,33 @@ class BaseEvaluator:
         # Check if we need to do this evaluation part
         if(self.qualitative_config["do_run"] == False):
             return
+
+        # gets some of the configs we are going to use for rendering
+        number_to_render = get_mandatory_config("number_to_render", self.qualitative_config, "qualitative_config")
+
+        # create the dataloader
+        batch_sizes = {"evaluation":1}
+        evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, self.evaluation_dataset, "evaluation")
+
+        # put the models into evaluation mode
+        for model_name in self.all_models.keys():
+            self.all_models[model_name].eval()
+        self.model.eval()
+
+        # Need to make the dataloader an iterator
+        evaluation_loader = iter(evaluation_loader)
+
+        # Render!
+        for i in tqdm(range(number_to_render), desc="Rendering"):
+
+            # Get the data
+            data = next(evaluation_loader)
+
+            # Do the forward pass over the data and get the model output
+            outputs = self.do_forward_pass(data)
+
+            # Render that output
+            self.render_model_output_Data(self.qualitative_save_dir, i, data, outputs)
 
 
     def _create_data_loaders(self, batch_sizes, num_cpu_cores_for_dataloader, dataset, dataset_type):
