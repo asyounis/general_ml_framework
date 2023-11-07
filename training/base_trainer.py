@@ -256,22 +256,36 @@ class BaseTrainer:
         # Compute the gradient norm for the models and add it to the data plotters
         for model_name in self.all_models.keys():
 
-            # We want L2 Norm
-            norm_type = 2
+            # See if this model even has any parameters before we compute gradient norms
+            if(len(list(self.all_models[model_name].parameters())) != 0):
 
-            # Compute the gradient norm
-            norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
+                # We want L2 Norm
+                norm_type = 2
 
-            # if there is no norm then we cant compute the norm
-            if(len(norm) == 0):
-                return None, None
+                # Compute the gradient norm
+                norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
 
-            # Finish computing the norm 
-            gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+                # if there is no norm then we cant compute the norm
+                if(len(norm) == 0):
+                    print("Norm is None")
 
-            # Add it to the data plotter
-            data_plotter_name = "gradient_norm_{}".format(model_name)
-            self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
+                    print("\n\n\n")
+
+                    n = [p.grad for p in self.all_models[model_name].parameters() if p.grad is not None]
+                    par = [p for p in self.all_models[model_name].parameters()]
+                    print(len(n))
+                    print(len(par))
+                    print(model_name)
+                    print("\n\n\n")
+
+                    return None, None
+
+                # Finish computing the norm 
+                gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+
+                # Add it to the data plotter
+                data_plotter_name = "gradient_norm_{}".format(model_name)
+                self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
 
         # Check if we are in a condition to take an optimization step and if so take the step
         if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
@@ -469,6 +483,7 @@ class BaseTrainer:
 
                 all_optimizers["model_name"] = optimizer
 
+
         return all_optimizers
 
 
@@ -614,8 +629,13 @@ class BaseTrainer:
 
         # Load the data plotters
         data_plotters_save_dicts = checkpoint_dict["data_plotters"]
+
+        # print(self.data_plotters.keys())
+        # print(data_plotters_save_dicts.keys())
+        # exit()
+
         for data_plotter_name in self.data_plotters.keys():
-            self.data_plotters.load_from_dict(data_plotters_save_dicts[data_plotter_name])
+            self.data_plotters[data_plotter_name].load_from_dict(data_plotters_save_dicts[data_plotter_name])
 
         # load the optimizers
         optimizers_save_dicts = checkpoint_dict["optimizers"]
