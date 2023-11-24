@@ -28,12 +28,17 @@ class DataPlotter:
         self.raw_values = []
         self.averaged_values = []
         self.moving_aveage_buffer = []
+        self.vertical_lines = []
 
         # Make sure the directory we are going to save into exists
         ensure_directory_exists(self.save_dir)
 
         # How many times we added before we plotted
         self.count_since_last_save = 0
+
+
+    def add_vertical_line(self):
+        self.vertical_lines.append(len(self.raw_values)+0.5)
 
 
     def add_value(self, value):
@@ -111,11 +116,16 @@ class DataPlotter:
             ax1.plot(x,p(x),"b--")
 
 
+        # Plot the vertical lines
+        for lx in self.vertical_lines:
+            ax1.axvline(x=lx, color="blue")
+
         ax1.set_xlabel(self.x_axis_label)
         ax1.set_ylabel(self.y_axis_label)
         ax1.set_title(self.title)
         # ax1.legend()
         ax1.get_yaxis().get_major_formatter().set_scientific(False)
+
 
 
         # Compute Stats to put in the table
@@ -191,6 +201,7 @@ class DataPlotter:
         save_dict["averaged_values"] = self.averaged_values
         save_dict["moving_aveage_buffer"] = self.moving_aveage_buffer
         save_dict["count_since_last_save"] = self.count_since_last_save
+        save_dict["vertical_lines"] = self.vertical_lines
 
         return save_dict
 
@@ -214,4 +225,5 @@ class DataPlotter:
         self.averaged_values = saved_dict["averaged_values"] 
         self.moving_aveage_buffer = saved_dict["moving_aveage_buffer"] 
         self.count_since_last_save = saved_dict["count_since_last_save"] 
+        self.vertical_lines = saved_dict["vertical_lines"] 
         

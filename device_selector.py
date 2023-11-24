@@ -7,13 +7,20 @@ import pynvml
 import torch
 from prettytable import PrettyTable
 
+# Project Imports
+from .utils import *
 
 
 class DeviceSelector:
     def __init__(self):
         pass
 
-    def get_device(self, device_selection_string):
+    def get_device(self, device_configs):
+
+        # Unpack the device configs
+        device_selection_string = get_mandatory_config("device", device_configs, "device_configs")
+        min_free_memory_gb = get_mandatory_config("min_free_memory_gb", device_configs, "device_configs")
+        max_number_of_tasks = get_mandatory_config("max_number_of_tasks", device_configs, "device_configs")
 
         #  The device to select 
         device = None
@@ -22,7 +29,7 @@ class DeviceSelector:
         if("cuda_auto_multi" in device_selection_string):
 
             # Get all the free GPUs:
-            free_gpus = self._get_free_gpus()
+            free_gpus = self._get_free_gpus(min_free_memory_gb, max_number_of_tasks)
 
             # Get how many gpus we need
             num_gpus_needed = int(device_selection_string.split(":")[-1])
@@ -41,8 +48,19 @@ class DeviceSelector:
 
         elif(device_selection_string == "cuda_auto"):
 
-            # Get the GPU index to use
-            device_idx = self._get_gpu_to_use()
+            # Get all the free GPUs:
+            free_gpus = self._get_free_gpus(min_free_memory_gb, max_number_of_tasks)
+
+            # Get how many gpus we need
+            num_gpus_needed = int(device_selection_string.split(":")[-1])
+
+            # Make sure we have enough
+            if(len(free_gpus) == 0):
+                print("Not enough available GPUs for request.... Exiting")
+                assert(False)
+
+            # Select only the number we need
+            device_idx = free_gpus[0]
 
             # put it in pytorch format
             device = "cuda:{}".format(device_idx)
@@ -83,7 +101,7 @@ class DeviceSelector:
         return table_str
 
 
-    def _get_free_gpus(self):
+    def _get_free_gpus(self, min_free_memory_gb, max_number_of_tasks):
 
         # Get the labels for each of the devices
         all_devices = self._get_all_device_ids()
@@ -101,7 +119,7 @@ class DeviceSelector:
             num_compute_processes_running = device_info["num_compute_processes_running"]
 
             # If it has free memory then we can use it
-            if((free_memory >= (500 * 1024 * 1024)) and (num_compute_processes_running < 1)):
+            if((free_memory >= (min_free_memory_gb * 1024 * 1024)) and (num_compute_processes_running < max_number_of_tasks)):
                 free_gpus.append(i)
 
         return free_gpus

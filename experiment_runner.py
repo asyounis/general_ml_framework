@@ -94,8 +94,8 @@ class ExperimentRunner:
 
                 # Select the device to run on
                 gpu_info_str = device_selector.get_gpu_info_str(indent="\t")
-                device = get_mandatory_config("device", experiment_configs_copy, "experiment_configs_copy")
-                device = device_selector.get_device(device)
+                device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
+                device = device_selector.get_device(device_configs)
 
                 # Get the save directory and make sure that it exists 
                 # Note we add the run number to the save dir
@@ -133,7 +133,6 @@ class ExperimentRunner:
                 if(isinstance(device, list)):
                     assert(len(device) > 1)
                     model = torch.nn.DataParallel(model, device_ids=device)
-
 
                 # Detect if this is a training or evaluation and do the right thing
                 experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")

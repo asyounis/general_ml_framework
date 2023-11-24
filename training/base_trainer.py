@@ -15,6 +15,7 @@ from ..utils import *
 from .data_plotter import DataPlotter
 from .early_stopping import EarlyStopping
 from ..model_saver_loader import ModelSaverLoader
+from .lr_schedulers.CustomReduceLROnPlateau import CustomReduceLROnPlateau
 
 class BaseTrainer:
     def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model,training_dataset, validation_dataset):
@@ -34,6 +35,7 @@ class BaseTrainer:
         self.epochs = get_mandatory_config("epochs", self.training_configs, "training_configs")
         batch_sizes = get_mandatory_config_as_type("batch_sizes", self.training_configs, "training_configs", dict)
         optimizer_configs = get_mandatory_config_as_type("optimizer_configs", self.training_configs, "training_configs", dict)
+        lr_scheduler_configs = get_mandatory_config_as_type("lr_scheduler_configs", self.training_configs, "training_configs", dict)
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
@@ -58,6 +60,9 @@ class BaseTrainer:
 
         # Create the optimizer
         self.optimizers = self._create_optimizers(optimizer_configs, learning_rates)
+
+        # Create the learning rate schedulers
+        self.lr_schedulers = self._create_lr_schedulers(self.optimizers, lr_scheduler_configs)
 
         # Construct the early stopping
         self.early_stopping = EarlyStopping(early_stopping_configs)
@@ -138,6 +143,28 @@ class BaseTrainer:
             # Update the early stopping but dont actually do any stopping because we need to checkpoint
             self.early_stopping(validation_loss)
 
+            # Step the lr_schedulers
+            did_reduce_lr = False
+            for lr_scheduler_name in self.lr_schedulers.keys():
+
+                # Get the scheduler
+                lr_scheduler = self.lr_schedulers[lr_scheduler_name]
+
+                # Do an appropriate action based on the type of scheduler
+                if(isinstance(lr_scheduler, CustomReduceLROnPlateau)):
+                    if(lr_scheduler.step(validation_loss)):
+                        did_reduce_lr = True
+                else:
+                    print("Unknown lr scheduler type \"{}\"".format(str(type(lr_scheduler))))
+                    assert(False)
+
+            # Add if we reduced the LR
+            if(did_reduce_lr):
+                self.data_plotters["training_epoch_loss"].add_vertical_line()
+                self.data_plotters["validation_epoch_loss"].add_vertical_line()
+                self.data_plotters["validation_iteration_loss"].add_vertical_line()
+                self.data_plotters["training_iteration_loss"].add_vertical_line()
+
             # Create the checkpoint for this epoch
             self._create_checkpoint(epoch)
 
@@ -161,16 +188,21 @@ class BaseTrainer:
             if(len(self.optimizers.keys()) != 0):
                 self.model.train()
 
+            # Make a list with all the models
+            all_models_with_optimizers = list(self.optimizers.keys())
+
             for model_name in self.all_models.keys():
-                if(model_name in self.optimizers.keys()):
+                if(model_name in all_models_with_optimizers):
                     self.all_models[model_name].train()
                 else:
                     if(isinstance(self.model, torch.nn.DataParallel)):
                         if(self.all_models[model_name] != self.model.module):
                             self.all_models[model_name].eval()
+                            # print("eval mode 1", model_name)
                     else:
                         if(self.all_models[model_name] != self.model):
                             self.all_models[model_name].eval()
+                            # print("eval mode 2", model_name)
 
         # Keep track of stats needed to compute the average loss
         total_loss = 0
@@ -254,6 +286,7 @@ class BaseTrainer:
         loss.backward()
 
         # Compute the gradient norm for the models and add it to the data plotters
+        number_of_non_zero_gradient_norms = 0
         for model_name in self.all_models.keys():
 
             # See if this model even has any parameters before we compute gradient norms
@@ -266,26 +299,23 @@ class BaseTrainer:
                 norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
 
                 # if there is no norm then we cant compute the norm
-                if(len(norm) == 0):
-                    print("Norm is None")
+                if(len(norm) != 0):
 
-                    print("\n\n\n")
+                    # Finish computing the norm 
+                    gradient_norm = torch.norm(torch.stack(norm) , norm_type)
 
-                    n = [p.grad for p in self.all_models[model_name].parameters() if p.grad is not None]
-                    par = [p for p in self.all_models[model_name].parameters()]
-                    print(len(n))
-                    print(len(par))
-                    print(model_name)
-                    print("\n\n\n")
+                    # Add it to the data plotter
+                    data_plotter_name = "gradient_norm_{}".format(model_name)
+                    self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
 
-                    return None, None
+                    # We have a non zero norm!
+                    number_of_non_zero_gradient_norms += 1
 
-                # Finish computing the norm 
-                gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+        # Make sure we have some gradients
+        if(number_of_non_zero_gradient_norms == 0):
+            print("No gradients present!!")
+            return None, None
 
-                # Add it to the data plotter
-                data_plotter_name = "gradient_norm_{}".format(model_name)
-                self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
 
         # Check if we are in a condition to take an optimization step and if so take the step
         if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
@@ -318,7 +348,7 @@ class BaseTrainer:
             total_time_taken_seconds = 0
             number_of_losses_to_use_for_average_time = 0
 
-            # Go through all the data once
+            # Go through all the data once    
             t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader))
             for step, data in enumerate(t):
         
@@ -341,13 +371,12 @@ class BaseTrainer:
                     total_time_taken_seconds += float(end_time - start_time)
                     number_of_losses_to_use_for_average_time += 1
 
-                # Add the loss for the batch so we can do step losses
-                self.data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
-
                 # keep track of the average loss
                 total_loss += loss.item() * batch_size
                 number_of_losses_to_use_for_average_loss += batch_size
 
+                # Add the loss for the batch so we can do step losses
+                self.data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
 
             # Compute the average loss
             average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
@@ -481,10 +510,45 @@ class BaseTrainer:
                     print("Unknown optimizer type \"{}\"".format(optimizer_type))
                     exit()
 
-                all_optimizers["model_name"] = optimizer
-
+                all_optimizers[model_name] = optimizer
 
         return all_optimizers
+
+
+    def _create_lr_schedulers(self, optimizers, lr_scheduler_configs):
+
+        lr_schedulers = dict()
+
+        # Create an lr scheduler for each optimizer
+        for optimizer_name in optimizers.keys():
+
+            # Get the optimizer 
+            optimizer = optimizers[optimizer_name]            
+
+            # Get the LR scheduler type
+            lr_scheduler_type = get_mandatory_config("type", lr_scheduler_configs, "lr_scheduler_configs")
+
+            if(lr_scheduler_type == "ReduceLROnPlateau"):
+
+                # Get all the specific configs
+                threshold = get_mandatory_config("threshold", lr_scheduler_configs, "lr_scheduler_configs")
+                factor = get_mandatory_config("factor", lr_scheduler_configs, "lr_scheduler_configs")
+                patience = get_mandatory_config("patience", lr_scheduler_configs, "lr_scheduler_configs")
+                cooldown = get_mandatory_config("cooldown", lr_scheduler_configs, "lr_scheduler_configs")
+                min_lr = get_mandatory_config("min_lr", lr_scheduler_configs, "lr_scheduler_configs")
+                verbose = get_mandatory_config("verbose", lr_scheduler_configs, "lr_scheduler_configs")
+
+                # Create the scheduler
+                lr_scheduler = CustomReduceLROnPlateau(optimizer, mode="min", threshold=threshold, factor=factor, patience=patience, cooldown=cooldown, min_lr=min_lr, verbose=verbose)
+
+            else:
+                print("Unknown lr scheduler type \"{}\"".format(lr_scheduler_type))
+                assert(False)
+
+            # add it to the list of schedulers
+            lr_schedulers[optimizer_name] = lr_scheduler
+
+        return lr_schedulers    
 
 
     def _create_data_plotters(self):
@@ -539,6 +603,11 @@ class BaseTrainer:
             optimizers_save_dicts[optimizer_name] = self.optimizers[optimizer_name].state_dict()
         checkpoint_dict["optimizers"] = optimizers_save_dicts
 
+        # Save the lr_schedulers
+        lr_schedulers_save_dicts = dict()
+        for lr_scheduler in self.lr_schedulers.keys():
+            lr_schedulers_save_dicts[lr_scheduler] = self.lr_schedulers[lr_scheduler].state_dict()
+        checkpoint_dict["lr_schedulers"] = lr_schedulers_save_dicts
 
         # Save the early stopping
         checkpoint_dict["early_stopping"] = self.early_stopping.get_save_dict()
@@ -567,7 +636,7 @@ class BaseTrainer:
 
         # Log what we did!
         log_text = "Saved checkpoint to \"{}\"".format(checkpoint_file)
-        self.logger.log(log_text)
+        self.logger.log(log_text, print_to_terminal=False)
 
 
 
@@ -630,10 +699,6 @@ class BaseTrainer:
         # Load the data plotters
         data_plotters_save_dicts = checkpoint_dict["data_plotters"]
 
-        # print(self.data_plotters.keys())
-        # print(data_plotters_save_dicts.keys())
-        # exit()
-
         for data_plotter_name in self.data_plotters.keys():
             self.data_plotters[data_plotter_name].load_from_dict(data_plotters_save_dicts[data_plotter_name])
 
@@ -641,6 +706,11 @@ class BaseTrainer:
         optimizers_save_dicts = checkpoint_dict["optimizers"]
         for optimizer_name in self.optimizers.keys():
             self.optimizers[optimizer_name].load_state_dict(optimizers_save_dicts[optimizer_name])
+
+        # load the lr_schedulers
+        lr_schedulers_save_dicts = checkpoint_dict["lr_schedulers"]
+        for lr_scheduler_name in self.lr_schedulers.keys():
+            self.lr_schedulers[lr_scheduler_name].load_state_dict(lr_schedulers_save_dicts[lr_scheduler_name])
 
         # Load the early stopping
         self.early_stopping.load_from_dict(checkpoint_dict["early_stopping"])
@@ -670,6 +740,7 @@ class BaseTrainer:
 
     def project_specific_end_of_epoch_fn(self, epoch):
         return
+
 
     def project_specific_end_of_training_batch_fn(self, epoch, step):
         return
