@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Project Imports
-from ..utils import *
+from ..utils.config import *
 
 
 class DataPlotter:

@@ -7,7 +7,7 @@ import re
 import yaml
 
 # Project Imports
-from .utils import *
+from .utils.config import *
 
 
 
@@ -66,8 +66,25 @@ class ConfigFileLoader:
         elif(isinstance(target, str)):
 
             for var_name in variables:
-                if(var_name in target): 
-                    target = target.replace(var_name, variables[var_name])
+
+                # Get the variable value
+                var_value = variables[var_name]
+
+                # If it is the variable name then do a full replacement
+                if(target == var_name):
+                    target = copy.deepcopy(var_value)
+
+                # Otherwise is is just in the target and so we need to do string replacements
+                elif(var_name in target): 
+
+                    # If it is a string then we can do string replacement otherwise we need to do something fancier
+                    if(isinstance(var_value, str)):
+                        target = target.replace(var_name, var_value)
+                    else:
+
+                        # We have to first convert to a string then make the replacement
+                        var_value_str = str(var_value)
+                        target = target.replace(var_name, var_value_str)
 
             return target
 
@@ -134,6 +151,30 @@ class ConfigFileLoader:
 
 
     def _load_experiment_configs(self, root_configs):
+
+        # Templates for experiments
+        experiment_templates = dict()
+
+        # Load experiment templates form files if we have any
+        if("experiment_templates_import" in root_configs):
+            experiment_templates_import = root_configs["experiment_templates_import"]
+
+            # Load all the config files in order and recursively update the model configs
+            for model_config_file in experiment_templates_import:
+
+                # Load the config file
+                cfg = self._load_yaml_file(model_config_file)
+
+                # Get the templates and add them
+                templates = cfg["experiment_templates"]
+                self._add_experiment_templates(experiment_templates, templates)
+
+        # Load the templates form the main config 
+        if("experiment_templates" in root_configs):
+
+            # Get the templates and add them
+            templates = root_configs["experiment_templates"]
+            self._add_experiment_templates(experiment_templates, templates)
 
         # The model architecture configs
         experiments = list()
@@ -206,17 +247,34 @@ class ConfigFileLoader:
             experiment_name = list(experiment.keys())[0]
             experiment = experiment[experiment_name]
 
-            # If we have a parameters file we need to load then load it and add it to this experiment
-            if("common_experiments_config_file" in experiment):
+            # # If we have a parameters file we need to load then load it and add it to this experiment
+            # if("common_experiments_config_file" in experiment):
                 
-                # Load and update
-                common_experiments_config_file = experiment["common_experiments_config_file"]
-                common_experiments_parameters = self._load_yaml_file(common_experiments_config_file)
-                experiment = self._update_dicts_with_new_dict(common_experiments_parameters, experiment)
+            #     # Load and update
+            #     common_experiments_config_file = experiment["common_experiments_config_file"]
+            #     common_experiments_parameters = self._load_yaml_file(common_experiments_config_file)
+            #     experiment = self._update_dicts_with_new_dict(common_experiments_parameters, experiment)
+
+            #     # Resolve the variable names
+            #     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
+
+            # If we have a template to use then we should use it
+            if("template_to_use" in experiment):
+                
+                # Load the template to uses
+                template_to_use = experiment["template_to_use"]
+
+                # Make sure the template to use is valid
+                if(template_to_use not in experiment_templates):
+                    print("Template \"{}\" is not defined".format(template_to_use))
+                    assert(False)
+
+                # Get the configs for the template to and update the experiment
+                template_configs = experiment_templates[template_to_use]
+                experiment = self._update_dicts_with_new_dict(template_configs, experiment)
 
                 # Resolve the variable names
                 experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
-
 
             # If we have a dataset params file to load
             if("dataset_configs_file" in experiment):
@@ -289,7 +347,6 @@ class ConfigFileLoader:
         return target
 
 
-
     def _check_for_unresolved_variables(self, target):
 
 
@@ -327,3 +384,25 @@ class ConfigFileLoader:
                 replace_name = reserved_variable.replace("<", REPLACEMENT_STRING_LEFT)
                 replace_name = replace_name.replace(">", REPLACEMENT_STRING_RIGHT)
                 target = target.replace(replace_name, reserved_variable)
+
+
+
+    def _add_experiment_templates(self, experiment_templates, templates):
+
+
+        # Add all the templates
+        for template in templates:
+
+            # Get the name of the template and its configs
+            template_name = list(template.keys())[0]
+            template_configs = template[template_name]
+
+            # Make sure that this template is unique
+            if(template_name in experiment_templates):
+                print("Template named \"{}\" defined multiple times", template_name)
+                assert(False)
+
+            # Add it to the templates
+            experiment_templates[template_name] = template_configs
+
+        return experiment_templates

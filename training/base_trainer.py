@@ -11,7 +11,7 @@ import torch
 from tqdm import tqdm
 
 # Project Imports
-from ..utils import *
+from ..utils.config import *
 from .data_plotter import DataPlotter
 from .early_stopping import EarlyStopping
 from ..model_saver_loader import ModelSaverLoader
@@ -38,7 +38,6 @@ class BaseTrainer:
         lr_scheduler_configs = get_mandatory_config_as_type("lr_scheduler_configs", self.training_configs, "training_configs", dict)
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
-
 
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
@@ -90,7 +89,6 @@ class BaseTrainer:
             self.model = self.model.to(self.device[0])
         else:
             self.model = self.model.to(self.device)
-
 
     def train(self):
 
@@ -412,18 +410,6 @@ class BaseTrainer:
         else:
             shuffle_data = False
 
-        # shuffle_data = False
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-        # print("shuffle_data = False")
-
-
         # Create the data-loader
         dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
 
@@ -478,6 +464,14 @@ class BaseTrainer:
                 pass
 
             else:
+
+                # Get the model parameters
+                model_parameters = self.all_models[model_name].parameters()
+
+                # Check to see if this model has any learnable parameters. If not then skip it
+                if(len(list(model_parameters)) == 0):
+                    self.logger.log("WARNING: learning rate for model name \"{}\" was specified but model has no learnable parameters... Skipping...".format(model_name))
+                    continue
 
                 # Create the optimizer based on the type
                 optimizer_type = get_mandatory_config("type", optimizer_configs, "optimizer_configs")

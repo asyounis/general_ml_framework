@@ -49,5 +49,3 @@ def ensure_directory_exists(directory):
     if(not os.path.exists(directory)):
         os.makedirs(directory)
 
-def print_dict_pretty(data_dict):
-    print(yaml.dump(data_dict, allow_unicode=True, default_flow_style=False))

@@ -7,7 +7,7 @@ import torch
 from tqdm import tqdm
 
 # Project Imports
-from ..utils import *
+from ..utils.config import *
 from ..model_saver_loader import ModelSaverLoader
 from .metric_pretty_printer import MetricPrettyPrinter
 

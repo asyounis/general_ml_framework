@@ -8,7 +8,7 @@ import torch
 from prettytable import PrettyTable
 
 # Project Imports
-from .utils import *
+from .utils.config import *
 
 
 class DeviceSelector:
@@ -110,6 +110,8 @@ class DeviceSelector:
         device_infos = self._get_all_device_infos()
 
         free_gpus = []
+        gpus_free_memory = []
+
 
         # Go through all the devices and
         for i, device_info in enumerate(device_infos):
@@ -120,7 +122,13 @@ class DeviceSelector:
 
             # If it has free memory then we can use it
             if((free_memory >= (min_free_memory_gb * 1024 * 1024)) and (num_compute_processes_running < max_number_of_tasks)):
-                free_gpus.append(i)
+                free_gpus.append((i, free_memory))
+
+
+        # Sort the GPUs by the ones with the most free memory.  
+        # This will make the GPUs earlier in the list have more memory available
+        free_gpus = sorted(free_gpus, key=lambda x:x[1], reverse=True)
+        free_gpus = [x[0] for x in free_gpus]
 
         return free_gpus
 

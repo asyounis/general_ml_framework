@@ -3,21 +3,32 @@
 # Python Imports
 import sys
 import copy 
+import argparse
+import time 
+import gc
 
 # Package Imports
 import yaml
 import torch
 
 # Project Imports
-from .utils import *
+from .utils.config import *
 from .config_file_loader import ConfigFileLoader
 from .device_selector import DeviceSelector
 from .model_saver_loader import ModelSaverLoader
 from .logger import Logger
 
 class ExperimentRunner:
-    def __init__(self, config_file):
-    
+    def __init__(self):
+            
+        # Parse the command line arguments
+        args = self._parse_cmd_arguments()
+
+        # Unpack the arguments
+        config_file = args.config_file
+        self.number_of_runs = args.number_of_runs
+        self.run_numbers = args.run_numbers
+
         # Load the config File
         config_file_loader = ConfigFileLoader(config_file)
 
@@ -55,7 +66,6 @@ class ExperimentRunner:
     def add_metric(self, name , cls):
         self.metric_classes[name] = cls
 
-
     def run(self):
 
         # Create the device selector that we will use to get the device to use 
@@ -76,77 +86,91 @@ class ExperimentRunner:
                 continue
 
             # Get the number of times to run the experiment
-            number_of_runs = get_optional_config_with_default("number_of_runs", experiment_configs, "experiment_configs", default_value=1)
+            number_of_runs = get_optional_config_with_default("number_of_runs", experiment_configs, "experiment_configs", default_value=self.number_of_runs)
 
             # Run multiple times
             for run_number in range(number_of_runs):
 
+                # Check if we should run this experiment
+                if(self.run_numbers is not None):
+                    if(run_number not in self.run_numbers):
+                        continue
 
-                # Make a run specific variable set
-                variables = dict()
-                variables["<framework_var_run_number>"] = "run_{:04d}".format(run_number)
-
-                # Make a copy of the configs for this run
-                experiment_configs_copy = copy.deepcopy(experiment_configs)
-
-                # Resolve the variables
-                experiment_configs_copy = ConfigFileLoader.resolve_variables(variables, experiment_configs_copy)                
-
-                # Select the device to run on
-                gpu_info_str = device_selector.get_gpu_info_str(indent="\t")
-                device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
-                device = device_selector.get_device(device_configs)
-
-                # Get the save directory and make sure that it exists 
-                # Note we add the run number to the save dir
-                save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
-                save_dir = "{}/run_{:04d}/".format(save_dir, run_number)
-                ensure_directory_exists(save_dir)
-
-                # Create the Logger
-                logger = Logger(save_dir)
-
-                # Print some info
-                logger.log("\n\n")
-                logger.log("----------------------------------------------------------------------")
-                logger.log("----------------------------------------------------------------------")
-                logger.log("Running experiment \"{}\"".format(experiment_name))
-                logger.log("----------------------------------------------------------------------")
-
-                # Log some some important things
-                logger.log("GPU Device Info:")
-                logger.log(gpu_info_str)
-                logger.log("")
-                logger.log("Device         : {}".format(device))
-                logger.log("Save Directory : {}".format(save_dir))
-                logger.log("")
-
-                # Make the model
-                model = self._create_model(experiment_configs_copy)
-
-                # Load the model!
-                if("pretrained_models" in experiment_configs_copy):
-                    pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
-                    ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
-
-                # If we have more than 1 Device then we should be in parallel mode
-                if(isinstance(device, list)):
-                    assert(len(device) > 1)
-                    model = torch.nn.DataParallel(model, device_ids=device)
-
-                # Detect if this is a training or evaluation and do the right thing
-                experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
-                if(experiment_type == "training"):
-                    self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device, model)
-
-                elif(experiment_type == "evaluation"):
-                    self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device, model)
-
-                else:
-                    print("Unknown experiment type \"{}\"".format(experiment_type))
-                    assert(False)
+                # Run the experiment
+                self._run_experiment(experiment_name, experiment_configs, run_number, number_of_runs, device_selector)
 
 
+                # Cleanup after running the experiment
+                gc.collect()                
+                torch.cuda.empty_cache()
+                # print(torch.cuda.memory_summary())
+
+
+    def _run_experiment(self, experiment_name, experiment_configs, run_number, number_of_runs, device_selector):
+
+        # Make a run specific variable set
+        variables = dict()
+        variables["<framework_var_run_number>"] = "run_{:04d}".format(run_number)
+
+        # Make a copy of the configs for this run
+        experiment_configs_copy = copy.deepcopy(experiment_configs)
+
+        # Resolve the variables
+        experiment_configs_copy = ConfigFileLoader.resolve_variables(variables, experiment_configs_copy)                
+
+        # Select the device to run on
+        gpu_info_str = device_selector.get_gpu_info_str(indent="\t")
+        device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
+        device = device_selector.get_device(device_configs)
+
+        # Get the save directory and make sure that it exists 
+        # Note we add the run number to the save dir
+        save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
+        save_dir = "{}/run_{:04d}/".format(save_dir, run_number)
+        ensure_directory_exists(save_dir)
+
+        # Create the Logger
+        logger = Logger(save_dir)
+
+        # Print some info
+        logger.log("\n\n")
+        logger.log("----------------------------------------------------------------------")
+        logger.log("----------------------------------------------------------------------")
+        logger.log("Running experiment \"{}\". Run Number {:02d} out of {:02d}".format(experiment_name, run_number, number_of_runs))
+        logger.log("----------------------------------------------------------------------")
+
+        # Log some some important things
+        logger.log("GPU Device Info:")
+        logger.log(gpu_info_str)
+        logger.log("")
+        logger.log("Device         : {}".format(device))
+        logger.log("Save Directory : {}".format(save_dir))
+        logger.log("")
+
+        # Make the model
+        model = self._create_model(experiment_configs_copy)
+
+        # Load the model!
+        if("pretrained_models" in experiment_configs_copy):
+            pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
+            ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
+
+        # If we have more than 1 Device then we should be in parallel mode
+        if(isinstance(device, list)):
+            assert(len(device) > 1)
+            model = torch.nn.DataParallel(model, device_ids=device)
+
+        # Detect if this is a training or evaluation and do the right thing
+        experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
+        if(experiment_type == "training"):
+            self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device, model)
+
+        elif(experiment_type == "evaluation"):
+            self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device, model)
+
+        else:
+            print("Unknown experiment type \"{}\"".format(experiment_type))
+            assert(False)
 
     def _run_training(self, experiment_name, experiment_configs, save_dir, logger, device, model):
 
@@ -170,6 +194,7 @@ class ExperimentRunner:
         # train!!
         trainer.train()
 
+
     def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device, model):
 
         # Get evaluation type
@@ -191,7 +216,6 @@ class ExperimentRunner:
         # evaluate!!
         evaluator.evaluate()
 
-
     def _create_dataset(self, dataset_configs, dataset_type):
 
         # get the name of the datasets
@@ -205,8 +229,6 @@ class ExperimentRunner:
         dataset = dataset_cls(dataset_configs, dataset_type)
 
         return dataset
-
-
 
     def _create_model(self, experiment_configs):
 
@@ -228,3 +250,23 @@ class ExperimentRunner:
         model = model_cls(model_configs, self.model_architecture_configs)
 
         return model
+
+
+    def _parse_cmd_arguments(self):
+
+        # Create the parser
+        parser = argparse.ArgumentParser()
+
+        # We always need a config file
+        parser.add_argument("-c", "--config_file", dest="config_file", help="Specify the filepath to the config file to use", required=True, type=str, action="store")
+
+        # We need an optional number of runs
+        parser.add_argument("-n", "--number_of_runs", dest="number_of_runs", help="Specify the number of times to run an experiment", required=False, type=int, default=1)
+
+        # We need an optional number of runs
+        parser.add_argument("-r", "--run_numbers", dest="run_numbers", help="Specify a specific run to run", required=False, type=int, default=None, nargs="+")
+
+        # Parse!!
+        args = parser.parse_args()
+
+        return args

@@ -5,7 +5,7 @@
 import torch
 
 # Project Imports
-from .utils import *
+from .utils.config import *
 
 
 class ModelSaverLoader:

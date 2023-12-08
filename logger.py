@@ -3,7 +3,7 @@ import os
 import shutil
 
 # Project Imports
-from .utils import *
+from .utils.config import *
 
 class Logger:
 	def __init__(self, save_dir):
@@ -40,6 +40,16 @@ class Logger:
 
 	def log_warning(self, text, print_to_terminal=True):
 
+		self.log("", print_to_terminal=print_to_terminal)
 		self.log("WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING", print_to_terminal=print_to_terminal)
 		self.log(text, print_to_terminal=print_to_terminal)
 		self.log("WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING", print_to_terminal=print_to_terminal)
+		self.log("", print_to_terminal=print_to_terminal)
+
+	def log_error(self, text, print_to_terminal=True):
+
+		self.log("", print_to_terminal=print_to_terminal)
+		self.log("ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR", print_to_terminal=print_to_terminal)
+		self.log(text, print_to_terminal=print_to_terminal)
+		self.log("ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR ERROR", print_to_terminal=print_to_terminal)
+		self.log("", print_to_terminal=print_to_terminal)
