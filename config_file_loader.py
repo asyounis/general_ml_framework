@@ -259,22 +259,25 @@ class ConfigFileLoader:
             #     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
             # If we have a template to use then we should use it
-            if("template_to_use" in experiment):
+            if("templates_to_use" in experiment):
                 
                 # Load the template to uses
-                template_to_use = experiment["template_to_use"]
+                templates_to_use = experiment["templates_to_use"]
 
-                # Make sure the template to use is valid
-                if(template_to_use not in experiment_templates):
-                    print("Template \"{}\" is not defined".format(template_to_use))
-                    assert(False)
+                # Add each of the templates back to back
+                for template_to_use in templates_to_use:
 
-                # Get the configs for the template to and update the experiment
-                template_configs = experiment_templates[template_to_use]
-                experiment = self._update_dicts_with_new_dict(template_configs, experiment)
+                    # Make sure the template to use is valid
+                    if(template_to_use not in experiment_templates):
+                        print("Template \"{}\" is not defined".format(template_to_use))
+                        assert(False)
 
-                # Resolve the variable names
-                experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
+                    # Get the configs for the template to and update the experiment
+                    template_configs = experiment_templates[template_to_use]
+                    experiment = self._update_dicts_with_new_dict(template_configs, experiment)
+
+                    # Resolve the variable names
+                    experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
             # If we have a dataset params file to load
             if("dataset_configs_file" in experiment):
@@ -342,6 +345,7 @@ class ConfigFileLoader:
                     else:
                         target[key] = new_stuff[key]   
         else:
+            print(type(target))
             assert(False)
 
         return target
