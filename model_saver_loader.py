@@ -38,7 +38,8 @@ class ModelSaverLoader:
 			load_file = pretrained_model_configs["full_model"]
 			state_dict = torch.load(load_file, map_location="cpu")
 			model.load_state_dict(state_dict)
-			logger.log("Loading \"Full Model\"")
+			logger.log("Loading \"Full Model\" from")
+			logger.log("\t {}".format(load_file))
 			return
 
 		# Not the full model so we are good!
@@ -56,6 +57,7 @@ class ModelSaverLoader:
 			state_dict = torch.load(load_file, map_location="cpu")
 			internal_models[model_name].load_state_dict(state_dict)
 			logger.log("Loading \"{}\"".format(model_name))
+			logger.log("\t {}".format(load_file))
 
 
 	def _save_models_in_dir(self, directory):

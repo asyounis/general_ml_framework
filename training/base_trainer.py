@@ -18,7 +18,7 @@ from ..model_saver_loader import ModelSaverLoader
 from .lr_schedulers.CustomReduceLROnPlateau import CustomReduceLROnPlateau
 
 class BaseTrainer:
-    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model,training_dataset, validation_dataset):
+    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model,training_dataset, validation_dataset, load_from_checkpoint):
 
         # Save in case we need it
         self.experiment_name = experiment_name
@@ -43,7 +43,13 @@ class BaseTrainer:
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
         self.accumulate_gradients_counter = get_optional_config_with_default("accumulate_gradients_counter", self.training_configs, "training_configs", default_value=1)
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
-        self.load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
+        config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
+        
+        # See if we should use the one passed in or the one loaded from the file
+        if(load_from_checkpoint is None):
+            self.load_from_checkpoint = config_load_from_checkpoint
+        else:
+            self.load_from_checkpoint = load_from_checkpoint
 
         # create the dataloaders
         self.training_loader = self._create_data_loaders(batch_sizes, self.training_dataset, "training")

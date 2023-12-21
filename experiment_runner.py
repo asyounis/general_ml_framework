@@ -28,6 +28,7 @@ class ExperimentRunner:
         config_file = args.config_file
         self.number_of_runs = args.number_of_runs
         self.run_numbers = args.run_numbers
+        self.load_from_checkpoint = args.load_from_checkpoint
 
         # Load the config File
         config_file_loader = ConfigFileLoader(config_file)
@@ -189,7 +190,7 @@ class ExperimentRunner:
 
         # Create the trainer
         trainer_cls = self.trainer_classes[training_type]
-        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, training_dataset, validation_dataset)
+        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, training_dataset, validation_dataset, self.load_from_checkpoint)
 
         # train!!
         trainer.train()
@@ -265,6 +266,9 @@ class ExperimentRunner:
 
         # We need an optional number of runs
         parser.add_argument("-r", "--run_numbers", dest="run_numbers", help="Specify a specific run to run", required=False, type=int, default=None, nargs="+")
+
+        # We need an optional load from checkpoint
+        parser.add_argument("-l", "--load_from_checkpoint", dest="load_from_checkpoint", help="Override if se should load from checkpoint or not", required=False, type=bool, default=None)
 
         # Parse!!
         args = parser.parse_args()
