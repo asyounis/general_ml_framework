@@ -183,14 +183,9 @@ class ExperimentRunner:
             print("Unknown trainer type \"{}\"".format(training_type))
             assert(False)
 
-        # Create the datasets
-        dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
-        training_dataset = self._create_dataset(dataset_configs, "training")
-        validation_dataset = self._create_dataset(dataset_configs, "validation")
-
         # Create the trainer
         trainer_cls = self.trainer_classes[training_type]
-        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, training_dataset, validation_dataset, self.load_from_checkpoint)
+        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, self._create_dataset, self.load_from_checkpoint)
 
         # train!!
         trainer.train()
@@ -268,7 +263,7 @@ class ExperimentRunner:
         parser.add_argument("-r", "--run_numbers", dest="run_numbers", help="Specify a specific run to run", required=False, type=int, default=None, nargs="+")
 
         # We need an optional load from checkpoint
-        parser.add_argument("-l", "--load_from_checkpoint", dest="load_from_checkpoint", help="Override if se should load from checkpoint or not", required=False, type=bool, default=None)
+        parser.add_argument("-l", "--load_from_checkpoint", dest="load_from_checkpoint", help="Override if we should load from checkpoint or not", required=False, type=bool, default=None)
 
         # Parse!!
         args = parser.parse_args()

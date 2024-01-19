@@ -18,7 +18,7 @@ from ..model_saver_loader import ModelSaverLoader
 from .lr_schedulers.CustomReduceLROnPlateau import CustomReduceLROnPlateau
 
 class BaseTrainer:
-    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model,training_dataset, validation_dataset, load_from_checkpoint):
+    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, dataset_create_fn, load_from_checkpoint):
 
         # Save in case we need it
         self.experiment_name = experiment_name
@@ -27,8 +27,6 @@ class BaseTrainer:
         self.logger = logger
         self.device = device
         self.model = model
-        self.training_dataset = training_dataset
-        self.validation_dataset = validation_dataset
 
         # Extract the mandatory training configs
         self.training_configs = get_mandatory_config("training_configs", experiment_configs, "experiment_configs")
@@ -38,6 +36,11 @@ class BaseTrainer:
         lr_scheduler_configs = get_mandatory_config_as_type("lr_scheduler_configs", self.training_configs, "training_configs", dict)
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
+
+        # Extract the dataset configs
+        dataset_usage_configs = get_mandatory_config_as_type("dataset_usage_configs", self.training_configs, "training_configs", dict)
+        training_dataset_name = get_mandatory_config("training_dataset_name", dataset_usage_configs, "dataset_usage_configs")
+        validation_dataset_name = get_mandatory_config("validation_dataset_name", dataset_usage_configs, "dataset_usage_configs")
 
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
@@ -50,6 +53,11 @@ class BaseTrainer:
             self.load_from_checkpoint = config_load_from_checkpoint
         else:
             self.load_from_checkpoint = load_from_checkpoint
+
+        # Create the datasets
+        dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
+        self.training_dataset = dataset_create_fn(dataset_configs, training_dataset_name)
+        self.validation_dataset = dataset_create_fn(dataset_configs, validation_dataset_name)
 
         # create the dataloaders
         self.training_loader = self._create_data_loaders(batch_sizes, self.training_dataset, "training")
@@ -75,6 +83,26 @@ class BaseTrainer:
         # Create the data plotters
         self.data_plotters = self._create_data_plotters()
 
+        # See if there are models that we can disable gradients for and make sure that none of the models in here are
+        # set to learn (aka has an optimizer).
+        # Also this is dangerous since we cant verify if we need the gradients for this model
+        # so assume that the user knows what they are doing
+        self.models_with_disabled_gradients = get_optional_config_with_default("models_with_disabled_gradients", self.training_configs, "training_configs", default_value=[])
+        if(len(self.models_with_disabled_gradients) != 0):
+            
+            # Risky so tell the user
+            logger.log_warning("Disabling Gradients computation for certain models!!  Make sure you know what you are doing!!!")
+
+            # Make sure none of the models are set to train
+            for model_name in self.models_with_disabled_gradients:
+                if(model_name in self.optimizers):
+                    logger.log_error("Model set to turn off gradient has optimizer: \"{}\"".format(model_name))
+                    assert(False)
+
+            # Convert to a set for faster lookup
+            self.models_with_disabled_gradients = set(self.models_with_disabled_gradients)
+
+
         # Keep track of the time averages
         self.timing_data = dict()
         self.timing_data["average_training_time"] = []
@@ -85,7 +113,6 @@ class BaseTrainer:
 
         # Load from the checkpoint
         self._load_from_checkpoint()
-
 
         # Create the model saver
         self.model_saver = ModelSaverLoader(self.all_models, self.save_dir, self.logger)
@@ -195,18 +222,24 @@ class BaseTrainer:
             # Make a list with all the models
             all_models_with_optimizers = list(self.optimizers.keys())
 
+            # Get the main model
+            if(isinstance(self.model, torch.nn.DataParallel)):
+                main_model = self.model.module
+            else:
+                main_model = self.model
+
             for model_name in self.all_models.keys():
                 if(model_name in all_models_with_optimizers):
                     self.all_models[model_name].train()
                 else:
-                    if(isinstance(self.model, torch.nn.DataParallel)):
-                        if(self.all_models[model_name] != self.model.module):
-                            self.all_models[model_name].eval()
-                            # print("eval mode 1", model_name)
-                    else:
-                        if(self.all_models[model_name] != self.model):
-                            self.all_models[model_name].eval()
-                            # print("eval mode 2", model_name)
+                    if(self.all_models[model_name] != main_model):
+                        self.all_models[model_name].eval()
+
+                        # Disable gradients if we should 
+                        if(model_name in self.models_with_disabled_gradients):
+                            for name, param in self.all_models[model_name].named_parameters():
+                                param.requires_grad = False
+
 
         # Keep track of stats needed to compute the average loss
         total_loss = 0
@@ -230,7 +263,7 @@ class BaseTrainer:
         self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
 
         # Go through all the data once
-        t = tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1)
+        t = tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1, desc="Training Epoch")
         for step_tmp, data in enumerate(t):
 
             # Add 1 to account for the step we already took
@@ -353,7 +386,7 @@ class BaseTrainer:
             number_of_losses_to_use_for_average_time = 0
 
             # Go through all the data once    
-            t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader))
+            t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader), desc="Validation Epoch")
             for step, data in enumerate(t):
         
                 # Start the timer
