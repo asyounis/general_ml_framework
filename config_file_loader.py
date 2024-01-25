@@ -228,7 +228,9 @@ class ConfigFileLoader:
                 key = list(exp_override.keys())[0]
                     
                 # Make sure the key is for a valid experiment
-                assert(key in exp_idices)
+                if(key not in exp_idices):
+                    print("Key Missing: \"{}\"".format(key))
+                    assert(key in exp_idices)
 
                 # Update
                 exp_idx = exp_idices[key]
