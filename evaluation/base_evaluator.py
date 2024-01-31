@@ -29,6 +29,10 @@ class BaseEvaluator:
         self.quantitative_config = get_mandatory_config_as_type("quantitative_config", self.evaluation_configs, "evaluation_configs", dict)
         self.qualitative_config = get_mandatory_config_as_type("qualitative_config", self.evaluation_configs, "evaluation_configs", dict)
 
+        # Check if we are going to run the quantitative and qualitative 
+        self.quantitative_do_run = get_mandatory_config("do_run", self.quantitative_config, "quantitative_config")
+        self.qualitative_do_run = get_mandatory_config("do_run", self.qualitative_config, "qualitative_config")
+
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.evaluation_configs, "evaluation_configs", default_value=4)
 
@@ -81,7 +85,7 @@ class BaseEvaluator:
     def _do_quantitative_evaluation(self):
 
         # Check if we need to do this evaluation part
-        if(self.quantitative_config["do_run"] == False):
+        if(self.quantitative_do_run == False):
             return
 
         # get the metrics configs and create the metrics we will be using
@@ -122,7 +126,7 @@ class BaseEvaluator:
     def _do_qualitative_evaluation(self):
 
         # Check if we need to do this evaluation part
-        if(self.qualitative_config["do_run"] == False):
+        if(self.qualitative_do_run == False):
             return
 
         # gets some of the configs we are going to use for rendering
