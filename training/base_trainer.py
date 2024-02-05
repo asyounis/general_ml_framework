@@ -308,6 +308,9 @@ class BaseTrainer:
 
     def _do_training_step(self, step, data):
         
+        # Add that this is a training stage
+        data["stage"] = "training"
+
         # Zero out the gradients in prep for optimization
         for model_name in self.all_models.keys():
             self.all_models[model_name].zero_grad()
@@ -389,6 +392,9 @@ class BaseTrainer:
             t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader), desc="Validation Epoch")
             for step, data in enumerate(t):
         
+                # Add that this is a training stage
+                data["stage"] = "validation"
+
                 # Start the timer
                 start_time = time.time()
 

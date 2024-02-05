@@ -111,6 +111,9 @@ class BaseEvaluator:
         t = tqdm(iter(evaluation_loader), leave=False, total=len(evaluation_loader))
         for step, data in enumerate(t): 
 
+            # Add that this is an evaluation stage
+            data["stage"] = "evaluation"
+
             # Do the forward pass over the data and get the model output
             outputs = self.do_forward_pass(data)
 
@@ -149,6 +152,9 @@ class BaseEvaluator:
 
             # Get the data
             data = next(evaluation_loader)
+
+            # Add that this is an evaluation stage
+            data["stage"] = "evaluation"
 
             # Do the forward pass over the data and get the model output
             outputs = self.do_forward_pass(data)
