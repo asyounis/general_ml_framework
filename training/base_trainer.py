@@ -9,6 +9,7 @@ import time
 import yaml
 import torch
 from tqdm import tqdm
+from prettytable import PrettyTable
 
 # Project Imports
 from ..utils.config import *
@@ -483,6 +484,11 @@ class BaseTrainer:
         assert(has_non_frozen_count)
 
 
+        # Pack into a pretty table
+        table = PrettyTable()
+        table.field_names = ["Model Name", "Learning Rate"]
+
+
         # for each model make an optimizer
         for model_name in learning_rates.keys():
             
@@ -497,6 +503,13 @@ class BaseTrainer:
             # if this is a string then make it lower case so we can case agnostic
             if(isinstance(lr, str)):
                 lr = lr.lower()
+
+            # Add a row to the table
+            if(isinstance(lr, str)):
+                table.add_row([model_name, lr])
+            else:
+                table.add_row([model_name, "{:05f}".format(lr)])
+
 
             # If the learning rate is frozen then no optimizer is needed
             if(lr == "freeze"):
@@ -550,6 +563,16 @@ class BaseTrainer:
                     exit()
 
                 all_optimizers[model_name] = optimizer
+
+
+
+        # Add indent to the table and print it
+        table_str = str(table)
+        table_str = table_str.split("\n")
+        table_str = ["\t{}".format(ts) for ts in table_str]
+        table_str = "\n".join(table_str)
+        self.logger.log("Learning Rate Info:")
+        self.logger.log(table_str)
 
         return all_optimizers
 

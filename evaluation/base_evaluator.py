@@ -72,7 +72,7 @@ class BaseEvaluator:
             self._do_quantitative_evaluation()
 
             # Do Qualitative evaluation
-            self._do_qualitative_evaluation()
+            self._do_qualitative_evaluation_helper()
 
 
     def do_forward_pass(self, data):
@@ -94,6 +94,15 @@ class BaseEvaluator:
 
         # Get the configs
         batch_sizes = self.quantitative_config["batch_sizes"]
+
+        # all_ranges = []
+        # for i in tqdm(range(len(self.evaluation_dataset))):
+        #     all_ranges.append(self.evaluation_dataset[i])
+        # torch.save(all_ranges, "/scratch/ali/Development/particle_2D_localization/experiments/mapillary/mdpf_forward/ranges.pt")
+        # print(min(all_ranges))
+        # print(max(all_ranges))
+        # exit()
+
 
         # create the dataloaders
         evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, self.evaluation_dataset, "evaluation")
@@ -125,42 +134,18 @@ class BaseEvaluator:
         metric_pretty_printer = MetricPrettyPrinter(self.logger, self.quantitative_save_dir)
         metric_pretty_printer.print_metrics(metrics)
 
+    def do_qualitative_evaluation(self):
+        raise NotImplemented
 
-    def _do_qualitative_evaluation(self):
+
+    def _do_qualitative_evaluation_helper(self):
 
         # Check if we need to do this evaluation part
         if(self.qualitative_do_run == False):
             return
 
-        # gets some of the configs we are going to use for rendering
-        number_to_render = get_mandatory_config("number_to_render", self.qualitative_config, "qualitative_config")
-
-        # create the dataloader
-        batch_sizes = {"evaluation":1}
-        evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, self.evaluation_dataset, "evaluation")
-
-        # put the models into evaluation mode
-        for model_name in self.all_models.keys():
-            self.all_models[model_name].eval()
-        self.model.eval()
-
-        # Need to make the dataloader an iterator
-        evaluation_loader = iter(evaluation_loader)
-
-        # Render!
-        for i in tqdm(range(number_to_render), desc="Rendering"):
-
-            # Get the data
-            data = next(evaluation_loader)
-
-            # Add that this is an evaluation stage
-            data["stage"] = "evaluation"
-
-            # Do the forward pass over the data and get the model output
-            outputs = self.do_forward_pass(data)
-
-            # Render that output
-            self.render_model_output_data(self.qualitative_save_dir, i, data, outputs)
+        # Call the classes specific qualitative evaluation method
+        self.do_qualitative_evaluation()
 
 
     def _create_data_loaders(self, batch_sizes, num_cpu_cores_for_dataloader, dataset, dataset_type):
