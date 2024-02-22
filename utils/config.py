@@ -28,6 +28,19 @@ def get_mandatory_config_as_type(config_name, config_dict, config_dict_name, dty
     return value
 
 
+def get_optional_config_as_type_with_default(config_name, config_dict, config_dict_name, dtype, default_value=None):
+
+    if(config_name not in config_dict):
+        return default_value
+
+    value = config_dict[config_name]
+    
+    assert(isinstance(value, dtype))
+
+    return value
+
+
+
 
 def get_optional_config_with_default(config_name, config_dict, config_dict_name, default_value=None):
 

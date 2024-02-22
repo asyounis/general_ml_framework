@@ -32,11 +32,36 @@ class BaseTrainer:
         # Extract the mandatory training configs
         self.training_configs = get_mandatory_config("training_configs", experiment_configs, "experiment_configs")
         self.epochs = get_mandatory_config("epochs", self.training_configs, "training_configs")
-        batch_sizes = get_mandatory_config_as_type("batch_sizes", self.training_configs, "training_configs", dict)
         optimizer_configs = get_mandatory_config_as_type("optimizer_configs", self.training_configs, "training_configs", dict)
         lr_scheduler_configs = get_mandatory_config_as_type("lr_scheduler_configs", self.training_configs, "training_configs", dict)
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
+
+        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
+        # But we need 1 or the other, not both, not none
+        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", self.training_configs, "training_configs", dict, default_value=None)
+        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", self.training_configs, "training_configs", dict, default_value=None)
+        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
+            logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+        elif(batch_sizes is not None):
+            # nothing to do here
+            pass
+        elif(batch_sizes_per_gpu is not None):
+
+            # Get the number of devices
+            if(isinstance(device, str)):
+                assert("cuda" in device)
+                num_gpus = 1
+            else:
+                num_gpus = len(device)
+
+            # Compute the batch sizes
+            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
+            
+        else:
+            logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
 
         # Extract the dataset configs
         dataset_usage_configs = get_mandatory_config_as_type("dataset_usage_configs", self.training_configs, "training_configs", dict)
@@ -510,6 +535,10 @@ class BaseTrainer:
             else:
                 table.add_row([model_name, "{:05f}".format(lr)])
 
+
+            # Make sure that if we have a string that it is "freeze" and not some other string 
+            if(isinstance(lr, str)):
+                assert(lr == "freeze")
 
             # If the learning rate is frozen then no optimizer is needed
             if(lr == "freeze"):
