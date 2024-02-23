@@ -37,6 +37,9 @@ class BaseTrainer:
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
+        # How often to write the data plotter
+        data_plotter_plot_modulo = get_optional_config_with_default("data_plotter_plot_modulo", self.training_configs, "training_configs", default_value=256)
+
         # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
         # But we need 1 or the other, not both, not none
         batch_sizes = get_optional_config_as_type_with_default("batch_sizes", self.training_configs, "training_configs", dict, default_value=None)
@@ -107,7 +110,7 @@ class BaseTrainer:
         self.early_stopping = EarlyStopping(early_stopping_configs)
 
         # Create the data plotters
-        self.data_plotters = self._create_data_plotters()
+        self.data_plotters = self._create_data_plotters(data_plotter_plot_modulo)
 
         # See if there are models that we can disable gradients for and make sure that none of the models in here are
         # set to learn (aka has an optimizer).
@@ -642,23 +645,23 @@ class BaseTrainer:
         return lr_schedulers    
 
 
-    def _create_data_plotters(self):
+    def _create_data_plotters(self, data_plotter_plot_modulo):
 
         all_data_plotters = dict()
         
         # Create the epoch training and validation plotters
-        all_data_plotters["training_epoch_loss"] = DataPlotter("Training Loss per Epoch", "Epoch", "Training Loss", self.save_dir, "training_loss_epoch.png")
-        all_data_plotters["validation_epoch_loss"] = DataPlotter("Validation Loss per Epoch", "Epoch", "Validation Loss", self.save_dir, "validation_loss_epoch.png")
+        all_data_plotters["training_epoch_loss"] = DataPlotter("Training Loss per Epoch", "Epoch", "Training Loss", self.save_dir, "training_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["validation_epoch_loss"] = DataPlotter("Validation Loss per Epoch", "Epoch", "Validation Loss", self.save_dir, "validation_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
 
         # Create the iteration training and validation plotters
-        all_data_plotters["training_iteration_loss"] = DataPlotter("Training Loss per Iteration", "Iteration", "Training Loss", self.save_dir, "training_loss_iteration.png")
-        all_data_plotters["validation_iteration_loss"] = DataPlotter("Validation Loss per Iteration", "Iteration", "Validation Loss", self.save_dir, "validation_loss_iteration.png")
+        all_data_plotters["training_iteration_loss"] = DataPlotter("Training Loss per Iteration", "Iteration", "Training Loss", self.save_dir, "training_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["validation_iteration_loss"] = DataPlotter("Validation Loss per Iteration", "Iteration", "Validation Loss", self.save_dir, "validation_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
         
         # Create the gradient norm data plotters
         gradient_norm_plot_save_dir = "{}/gradient_norms/".format(self.save_dir)
         for model_name in self.all_models.keys():
             data_plotter_name = "gradient_norm_{}".format(model_name)
-            all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name))
+            all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
 
 
         # Get the project specific data plotters
