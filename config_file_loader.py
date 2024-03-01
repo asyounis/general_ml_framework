@@ -274,9 +274,11 @@ class ConfigFileLoader:
                         print("Template \"{}\" is not defined".format(template_to_use))
                         assert(False)
 
+
                     # Get the configs for the template to and update the experiment
                     template_configs = experiment_templates[template_to_use]
-                    experiment = self._update_dicts_with_new_dict(template_configs, experiment)
+                    experiment = self._update_dicts_with_new_dict(experiment, template_configs)
+
 
                     # Resolve the variable names
                     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
@@ -284,10 +286,14 @@ class ConfigFileLoader:
             # If we have a dataset params file to load
             if("dataset_configs_file" in experiment):
                 
+
                 # Load and update
                 dataset_configs_file = experiment["dataset_configs_file"]
                 dataset_params = self._load_yaml_file(dataset_configs_file)
                 experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
+
+                print("Loading dataset config file for experiment \"{}\"".format(experiment_name))
+                print("\t{}".format(dataset_configs_file))
 
                 # Resolve the variable names
                 experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)

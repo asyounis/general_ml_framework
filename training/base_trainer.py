@@ -37,34 +37,12 @@ class BaseTrainer:
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
+        # Extract the batch size information
+        batch_sizes = self._get_batch_sizes(self.training_configs, self.device)
+
         # How often to write the data plotter
-        data_plotter_plot_modulo = get_optional_config_with_default("data_plotter_plot_modulo", self.training_configs, "training_configs", default_value=256)
+        self.data_plotter_plot_modulo = get_optional_config_with_default("data_plotter_plot_modulo", self.training_configs, "training_configs", default_value=256)
 
-        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
-        # But we need 1 or the other, not both, not none
-        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", self.training_configs, "training_configs", dict, default_value=None)
-        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", self.training_configs, "training_configs", dict, default_value=None)
-        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
-            logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
-            assert(False)
-        elif(batch_sizes is not None):
-            # nothing to do here
-            pass
-        elif(batch_sizes_per_gpu is not None):
-
-            # Get the number of devices
-            if(isinstance(device, str)):
-                assert("cuda" in device)
-                num_gpus = 1
-            else:
-                num_gpus = len(device)
-
-            # Compute the batch sizes
-            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
-            
-        else:
-            logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
-            assert(False)
 
         # Extract the dataset configs
         dataset_usage_configs = get_mandatory_config_as_type("dataset_usage_configs", self.training_configs, "training_configs", dict)
@@ -110,7 +88,7 @@ class BaseTrainer:
         self.early_stopping = EarlyStopping(early_stopping_configs)
 
         # Create the data plotters
-        self.data_plotters = self._create_data_plotters(data_plotter_plot_modulo)
+        self.data_plotters = self._create_data_plotters(self.data_plotter_plot_modulo)
 
         # See if there are models that we can disable gradients for and make sure that none of the models in here are
         # set to learn (aka has an optimizer).
@@ -603,8 +581,10 @@ class BaseTrainer:
         table_str = table_str.split("\n")
         table_str = ["\t{}".format(ts) for ts in table_str]
         table_str = "\n".join(table_str)
+        self.logger.log("\n")
         self.logger.log("Learning Rate Info:")
         self.logger.log(table_str)
+        self.logger.log("\n")
 
         return all_optimizers
 
@@ -733,7 +713,6 @@ class BaseTrainer:
         self.logger.log(log_text, print_to_terminal=False)
 
 
-
     def _load_from_checkpoint(self):
         '''
             Load this trainer from a checkpoint if we can and are told to
@@ -822,6 +801,55 @@ class BaseTrainer:
         else:
             self.model.load_model_state_dict(state_dict)
 
+
+
+    def _get_batch_sizes(self, training_configs, device):
+
+        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
+        # But we need 1 or the other, not both, not none
+        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", training_configs, "training_configs", dict, default_value=None)
+        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", training_configs, "training_configs", dict, default_value=None)
+        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
+            self.logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+        elif(batch_sizes is not None):
+            # nothing to do here
+            pass
+        elif(batch_sizes_per_gpu is not None):
+
+            # Get the number of devices
+            if(isinstance(device, str)):
+                assert("cuda" in device)
+                num_gpus = 1
+            else:
+                num_gpus = len(device)
+
+            # Compute the batch sizes
+            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
+            
+        else:
+            self.logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+
+        # Create a table of all the batch sizes so we can print them
+        table = PrettyTable()
+        table.field_names = ["Dataset Name", "Batch size"]
+        for bsn in batch_sizes.keys():
+            table.add_row([bsn, batch_sizes[bsn]])
+
+        # Add indent to the table and print it
+        table_str = str(table)
+        table_str = table_str.split("\n")
+        table_str = ["\t{}".format(ts) for ts in table_str]
+        table_str = "\n".join(table_str)
+
+        # Print!
+        self.logger.log("\n")
+        self.logger.log("Batch size information:")
+        self.logger.log(table_str)
+        self.logger.log("\n")
+
+        return batch_sizes
 
 
     def do_forward_pass(self, data):

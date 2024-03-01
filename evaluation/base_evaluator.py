@@ -134,6 +134,14 @@ class BaseEvaluator:
         metric_pretty_printer = MetricPrettyPrinter(self.logger, self.quantitative_save_dir)
         metric_pretty_printer.print_metrics(metrics)
 
+        # Aggregate all the metrics so we can save into an object that can be easily parsed later
+        metric_save_data = []
+        for metric_name in metrics.keys():
+            metric_save_data.extend(metrics[metric_name].get_aggregated_result())
+
+        # Save
+        torch.save(metric_save_data, "{}/metrics.pt".format(self.quantitative_save_dir))
+
     def do_qualitative_evaluation(self):
         raise NotImplemented
 
