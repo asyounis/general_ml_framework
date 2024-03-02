@@ -45,11 +45,13 @@ class ModelSaverLoader:
 		# Not the full model so we are good!
 
 		# Load the internal models
+		models_not_loaded = []
 		internal_models = model.get_submodels()
 		for model_name in internal_models.keys():
 
 			# Nothing to load
 			if(model_name not in pretrained_model_configs):
+				models_not_loaded.append(model_name)
 				continue
 
 			# Load the model
@@ -58,6 +60,12 @@ class ModelSaverLoader:
 			internal_models[model_name].load_state_dict(state_dict)
 			logger.log("Loading \"{}\"".format(model_name))
 			logger.log("\t {}".format(load_file))
+
+		# Say which models we did not load
+		logger.log("\n")
+		logger.log("Did not load save files for: ")
+		for model_name in models_not_loaded:
+			logger.log("\t - \"{}\"".format(model_name))
 
 
 	def _save_models_in_dir(self, directory):

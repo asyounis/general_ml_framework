@@ -88,6 +88,10 @@ class BaseEvaluator:
         if(self.quantitative_do_run == False):
             return
 
+        self.logger.log("\n")
+        self.logger.log("Running Quantitative Evaluation: ")
+        self.logger.log("\n")
+
         # get the metrics configs and create the metrics we will be using
         metric_configs = get_mandatory_config_as_type("metric_configs", self.quantitative_config, "quantitative_config", dict)
         metrics = self._create_metrics(metric_configs, self.metrics_classes)
