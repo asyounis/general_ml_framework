@@ -138,6 +138,8 @@ class ExperimentRunner:
         logger.log("----------------------------------------------------------------------")
         logger.log("----------------------------------------------------------------------")
         logger.log("Running experiment \"{}\". Run Number {:02d} out of {:02d}".format(experiment_name, run_number, number_of_runs))
+        if(self.run_numbers is not None):
+            logger.log("Note: Run numbers are: {}".format(str(self.run_numbers)))
         logger.log("----------------------------------------------------------------------")
 
         # Log some some important things
