@@ -5,6 +5,7 @@
 import yaml
 import torch
 from tqdm import tqdm
+from prettytable import PrettyTable
 
 # Project Imports
 from ..utils.config import *
@@ -35,6 +36,13 @@ class BaseEvaluator:
 
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.evaluation_configs, "evaluation_configs", default_value=4)
+        self.logger.log("")
+        self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
+        self.logger.log("")
+
+        # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
+        # and allow the user to tell the model to do special things (like select modes and what not)
+        self.model_control_parameters = get_optional_config_with_default("model_control_parameters", self.evaluation_configs, "evaluation_configs", default_value=dict())
 
         # Create a qualitative and quantitative save directory
         self.quantitative_save_dir = "{}/quantitative/".format(self.save_dir)
@@ -97,7 +105,7 @@ class BaseEvaluator:
         metrics = self._create_metrics(metric_configs, self.metrics_classes)
 
         # Get the configs
-        batch_sizes = self.quantitative_config["batch_sizes"]
+        batch_sizes = self._get_batch_sizes(self.quantitative_config, self.device)
 
         # all_ranges = []
         # for i in tqdm(range(len(self.evaluation_dataset))):
@@ -127,6 +135,9 @@ class BaseEvaluator:
             # Add that this is an evaluation stage
             data["stage"] = "evaluation"
 
+            # Add in the model control parameters
+            data["model_control_parameters"] = self.model_control_parameters
+
             # Do the forward pass over the data and get the model output
             outputs = self.do_forward_pass(data)
 
@@ -144,7 +155,7 @@ class BaseEvaluator:
             metric_save_data.extend(metrics[metric_name].get_aggregated_result())
 
         # Save
-        torch.save(metric_save_data, "{}/metrics.pt".format(self.quantitative_save_dir))
+        torch.save(metric_save_data, "{}/metrics.ptp".format(self.quantitative_save_dir))
 
     def do_qualitative_evaluation(self):
         raise NotImplemented
@@ -212,3 +223,54 @@ class BaseEvaluator:
             
         return metrics
 
+
+
+
+
+    def _get_batch_sizes(self, configs, device):
+
+        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
+        # But we need 1 or the other, not both, not none
+        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", configs, "configs", dict, default_value=None)
+        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", configs, "configs", dict, default_value=None)
+        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
+            self.logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+        elif(batch_sizes is not None):
+            # nothing to do here
+            pass
+        elif(batch_sizes_per_gpu is not None):
+
+            # Get the number of devices
+            if(isinstance(device, str)):
+                assert("cuda" in device)
+                num_gpus = 1
+            else:
+                num_gpus = len(device)
+
+            # Compute the batch sizes
+            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
+            
+        else:
+            self.logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+
+        # Create a table of all the batch sizes so we can print them
+        table = PrettyTable()
+        table.field_names = ["Dataset Name", "Batch size"]
+        for bsn in batch_sizes.keys():
+            table.add_row([bsn, batch_sizes[bsn]])
+
+        # Add indent to the table and print it
+        table_str = str(table)
+        table_str = table_str.split("\n")
+        table_str = ["\t{}".format(ts) for ts in table_str]
+        table_str = "\n".join(table_str)
+
+        # Print!
+        self.logger.log("\n")
+        self.logger.log("Batch size information:")
+        self.logger.log(table_str)
+        self.logger.log("\n")
+
+        return batch_sizes

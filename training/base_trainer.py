@@ -55,6 +55,16 @@ class BaseTrainer:
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
         
+        # Log so we have a record
+        self.logger.log("")
+        self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
+        self.logger.log("")
+
+        # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
+        # and allow the user to tell the model to do special things (like select modes and what not)
+        self.model_control_parameters = get_optional_config_with_default("model_control_parameters", self.evaluation_configs, "evaluation_configs", default_value=dict())
+
+
         # See if we should use the one passed in or the one loaded from the file
         if(load_from_checkpoint is None):
             self.load_from_checkpoint = config_load_from_checkpoint
@@ -318,6 +328,9 @@ class BaseTrainer:
         # Add that this is a training stage
         data["stage"] = "training"
 
+        # Add in the model control parameters
+        data["model_control_parameters"] = self.model_control_parameters
+
         # Zero out the gradients in prep for optimization
         for model_name in self.all_models.keys():
             self.all_models[model_name].zero_grad()
@@ -401,6 +414,9 @@ class BaseTrainer:
         
                 # Add that this is a training stage
                 data["stage"] = "validation"
+
+                # Add in the model control parameters
+                data["model_control_parameters"] = self.model_control_parameters
 
                 # Start the timer
                 start_time = time.time()
