@@ -62,7 +62,7 @@ class BaseTrainer:
 
         # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
         # and allow the user to tell the model to do special things (like select modes and what not)
-        self.model_control_parameters = get_optional_config_with_default("model_control_parameters", self.evaluation_configs, "evaluation_configs", default_value=dict())
+        self.model_control_parameters = get_optional_config_with_default("model_control_parameters", self.training_configs, "training_configs", default_value=dict())
 
 
         # See if we should use the one passed in or the one loaded from the file
