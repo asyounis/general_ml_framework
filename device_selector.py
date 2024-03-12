@@ -25,8 +25,26 @@ class DeviceSelector:
         #  The device to select 
         device = None
 
+        # Get all the devices 
+        if("cuda_use_all" == device_selection_string):
+
+            # Get all the free GPUs:
+            free_gpus = self._get_free_gpus(min_free_memory_gb, max_number_of_tasks)
+
+            # Make sure we have some GPUs
+            if(len(free_gpus) == 0):
+                print("No GPUs available.... Exiting")
+                assert(False)
+
+            # Use all of them
+            device = free_gpus
+
+            # If we have 1 GPU then rename it into a pytorch format
+            if(len(device) == 1):
+                device = "cuda:{}".format(device[0])
+
         # Get the device we should use based on what the user specified
-        if("cuda_auto_multi" in device_selection_string):
+        elif("cuda_auto_multi" in device_selection_string):
 
             # Get all the free GPUs:
             free_gpus = self._get_free_gpus(min_free_memory_gb, max_number_of_tasks)
@@ -37,6 +55,7 @@ class DeviceSelector:
             # Make sure we have enough
             if(num_gpus_needed > len(free_gpus)):
                 print("Not enough available GPUs for request.... Exiting")
+                print("\t Requested {:d} GPUs but only had {:d}".format(num_gpus_needed, free_gpus))
                 assert(False)
 
             # Select only the number we need
