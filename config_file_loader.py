@@ -274,11 +274,9 @@ class ConfigFileLoader:
                         print("Template \"{}\" is not defined".format(template_to_use))
                         assert(False)
 
-
                     # Get the configs for the template to and update the experiment
                     template_configs = experiment_templates[template_to_use]
                     experiment = self._update_dicts_with_new_dict(experiment, template_configs)
-
 
                     # Resolve the variable names
                     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
@@ -342,19 +340,30 @@ class ConfigFileLoader:
             assert(False)
 
         elif(isinstance(target, dict)):
+
             # Update!
             for key in new_stuff.keys():
+            
+                # If the key was not in the target then add it
                 if(key not in target):
                     target[key] = new_stuff[key]
+
+                # It was in the target so instead we need to update it
                 else:
+
+                    # If it is a dict then recursively update it
                     if(isinstance(new_stuff[key], dict)):
                         assert(isinstance(target[key], dict))
                         target[key] = self._update_dicts_with_new_dict(target[key], new_stuff[key])
+                    
+                    # Otherwise manually update it
                     else:
                         target[key] = new_stuff[key]   
         else:
             print(type(target))
             assert(False)
+
+
 
         return target
 
