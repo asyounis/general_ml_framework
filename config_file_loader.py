@@ -262,10 +262,10 @@ class ConfigFileLoader:
             #     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
             # If we have a template to use then we should use it
-            if("templates_to_use" in experiment):
+            if("templates_to_use" in experiment_top_level_configs):
                 
                 # Load the template to uses
-                templates_to_use = experiment["templates_to_use"]
+                templates_to_use = experiment_top_level_configs["templates_to_use"]
 
                 # Add each of the templates back to back
                 for template_to_use in templates_to_use:
@@ -282,11 +282,16 @@ class ConfigFileLoader:
                     # Resolve the variable names
                     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
+            if("dataset_configs_file" in experiment_top_level_configs):
+                dataset_configs_file = experiment_top_level_configs["dataset_configs_file"]
+            elif("dataset_configs_file" in experiment):
+                dataset_configs_file = experiment["dataset_configs_file"]
+            else:
+                dataset_configs_file = None
             # If we have a dataset params file to load
-            if("dataset_configs_file" in experiment):
+            if(dataset_configs_file is not None):
 
                 # Load and update
-                dataset_configs_file = experiment["dataset_configs_file"]
                 dataset_params = self._load_yaml_file(dataset_configs_file)
                 experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
 
@@ -430,6 +435,9 @@ class ConfigFileLoader:
             if(template_name in experiment_templates):
                 print("Template named \"{}\" defined multiple times", template_name)
                 assert(False)
+
+            # We dont allow this since this will cause recursion issues
+            assert("templates_to_use" not in template_configs)
 
             # Add it to the templates
             experiment_templates[template_name] = template_configs
