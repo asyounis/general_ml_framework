@@ -107,13 +107,19 @@ class DataPlotter:
             ax1.text(i, self.averaged_values[i], "{:.2f}".format(self.averaged_values[i]))
 
 
-        # Plot the trend line if we have enough data
-        if(len(self.averaged_values) > 5):
-            x = np.arange(0, len(self.averaged_values), 1)
-            y = np.asarray(self.averaged_values)
-            z = np.polyfit(x, y, 1)
-            p = np.poly1d(z)
-            ax1.plot(x,p(x),"b--")
+        # # Plot the trend line if we have enough data
+        # if(len(self.averaged_values) > 5):
+
+        #     try:
+        #         x = np.arange(0, len(self.averaged_values), 1)
+        #         y = np.asarray(self.averaged_values)
+        #         z = np.polyfit(x, y, 1)
+        #         p = np.poly1d(z)
+        #         ax1.plot(x,p(x),"b--")
+        #     except:
+        #         # If we fail to fit a line then do not draw the line but
+        #         # def dont crash everything
+        #         pass
 
 
         # Plot the vertical lines
