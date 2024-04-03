@@ -9,8 +9,6 @@ import yaml
 # Project Imports
 from .utils.config import *
 
-
-
 class ConfigFileLoader:
     def __init__(self, root_config_file):
 
@@ -247,7 +245,10 @@ class ConfigFileLoader:
 
             # Unpack the experiment configs
             experiment_name = list(experiment.keys())[0]
-            experiment = experiment[experiment_name]
+            experiment_top_level_configs = experiment[experiment_name]
+
+            # These are the final experiment configs
+            experiment = dict()
 
             # # If we have a parameters file we need to load then load it and add it to this experiment
             # if("common_experiments_config_file" in experiment):
@@ -283,7 +284,6 @@ class ConfigFileLoader:
 
             # If we have a dataset params file to load
             if("dataset_configs_file" in experiment):
-                
 
                 # Load and update
                 dataset_configs_file = experiment["dataset_configs_file"]
@@ -296,6 +296,14 @@ class ConfigFileLoader:
                 # Resolve the variable names
                 experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
+
+            # Finally override with any of the top level configs
+            experiment = self._update_dicts_with_new_dict(experiment, experiment_top_level_configs)
+
+            # Resolve the variable names for the last time
+            experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
+
+            # We are done!!
             processed_experiments.append({experiment_name: experiment, })
 
         return processed_experiments
