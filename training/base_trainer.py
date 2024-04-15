@@ -54,11 +54,18 @@ class BaseTrainer:
         self.accumulate_gradients_counter = get_optional_config_with_default("accumulate_gradients_counter", self.training_configs, "training_configs", default_value=1)
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
-        
+        self.do_checkpointing = get_optional_config_with_default("do_checkpointing", self.training_configs, "training_configs", default_value=True)
+
         # Log so we have a record
         self.logger.log("")
         self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
+        self.logger.log("Doing checkpointing while training: {}".format(self.do_checkpointing))
+
+
+        
         self.logger.log("")
+
+
 
         # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
         # and allow the user to tell the model to do special things (like select modes and what not)
@@ -214,7 +221,8 @@ class BaseTrainer:
                 self.data_plotters["training_iteration_loss"].add_vertical_line()
 
             # Create the checkpoint for this epoch
-            self._create_checkpoint(epoch)
+            if(self.do_checkpointing):
+                self._create_checkpoint(epoch)
 
             # Determine if we should early stop
             if(self.early_stopping.do_stop()):
