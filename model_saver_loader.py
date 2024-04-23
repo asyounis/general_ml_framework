@@ -34,6 +34,7 @@ class ModelSaverLoader:
 		if("full_model" in pretrained_model_configs):
 			assert(len(pretrained_model_configs) == 1)
 
+
 			# Load the model
 			load_file = pretrained_model_configs["full_model"]
 			state_dict = torch.load(load_file, map_location="cpu")
@@ -62,10 +63,30 @@ class ModelSaverLoader:
 			logger.log("\t {}".format(load_file))
 
 		# Say which models we did not load
-		logger.log("\n")
-		logger.log("Did not load save files for: ")
-		for model_name in models_not_loaded:
-			logger.log("\t - \"{}\"".format(model_name))
+		if(len(models_not_loaded) != 0):
+			logger.log("\n")
+			logger.log("Did not load save files for: ")
+			for model_name in models_not_loaded:
+				logger.log("\t - \"{}\"".format(model_name))
+		else:
+			logger.log("\n")
+			logger.log("Save file loaded for all models")
+			
+
+		# Check if there are any models that we were asked to load that we didnt load
+		models_not_loaded = []
+		for model_name in pretrained_model_configs:
+			if(model_name not in internal_models):
+				models_not_loaded.append(model_name)
+
+
+		# Say which models we did not load
+		if(len(models_not_loaded) != 0):
+			logger.log("\n")
+			logger.log("Model files were specified for the following models, but those models dont actually exist: ")
+			for model_name in models_not_loaded:
+				logger.log("\t - \"{}\"".format(model_name))
+
 
 
 	def _save_models_in_dir(self, directory):

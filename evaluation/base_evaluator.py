@@ -121,6 +121,14 @@ class BaseEvaluator:
 
         # put the models into evaluation mode
         for model_name in self.all_models.keys():
+
+            # We should never be in this if but if we are PANIC
+            if(self.all_models[model_name] is None):
+                print("Error: Model named \"{}\" returns None".format(model_name))
+                assert(False)
+
+
+
             self.all_models[model_name].eval()
         self.model.eval()
 
