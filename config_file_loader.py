@@ -126,6 +126,13 @@ class ConfigFileLoader:
                 # Load the config file
                 cfg = self._load_yaml_file(model_config_file)
 
+                # If the config file is non then there was nothing to load so skip it
+                # But we should issue a warning
+                if(cfg is None):  
+                    print("WARNING: model architecture file is empty. Skipping")
+                    print("\t\t {}".format(model_config_file))
+                    continue
+
                 # Update the model root_configs
                 model_architecture_configs = self._update_dicts_with_new_dict(model_architecture_configs, cfg)
 
