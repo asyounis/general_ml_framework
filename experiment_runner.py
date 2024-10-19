@@ -154,6 +154,15 @@ class ExperimentRunner:
         # Make the model
         model = self._create_model(experiment_configs_copy)
 
+        # Init the model
+        model_init_configs = get_optional_config_with_default("model_init_configs", experiment_configs_copy, "experiment_configs_copy", default_value=None)
+        model.init(model_init_configs)
+
+        # Load the model!
+        if("pretrained_models" in experiment_configs_copy):
+            pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
+            ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
+
         # Load the model!
         if("pretrained_models" in experiment_configs_copy):
             pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
@@ -163,6 +172,7 @@ class ExperimentRunner:
         if(isinstance(device, list)):
             assert(len(device) > 1)
             model = torch.nn.DataParallel(model, device_ids=device)
+
 
         # Detect if this is a training or evaluation and do the right thing
         experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")

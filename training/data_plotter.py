@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 # Project Imports
 from ..utils.config import *
+from ..utils.general import *
 
 
 class DataPlotter:

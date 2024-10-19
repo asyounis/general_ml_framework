@@ -13,10 +13,12 @@ from prettytable import PrettyTable
 
 # Project Imports
 from ..utils.config import *
+from ..utils.general import *
 from .data_plotter import DataPlotter
 from .early_stopping import EarlyStopping
 from ..model_saver_loader import ModelSaverLoader
 from .lr_schedulers.CustomReduceLROnPlateau import CustomReduceLROnPlateau
+from .lr_schedulers.IterExponential import IterExponential
 
 class BaseTrainer:
     def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, dataset_create_fn, load_from_checkpoint):
@@ -60,12 +62,7 @@ class BaseTrainer:
         self.logger.log("")
         self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
         self.logger.log("Doing checkpointing while training: {}".format(self.do_checkpointing))
-
-
-        
         self.logger.log("")
-
-
 
         # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
         # and allow the user to tell the model to do special things (like select modes and what not)
@@ -203,12 +200,21 @@ class BaseTrainer:
             for lr_scheduler_name in self.lr_schedulers.keys():
 
                 # Get the scheduler
-                lr_scheduler = self.lr_schedulers[lr_scheduler_name]
+                lr_scheduler = self.lr_schedulers[lr_scheduler_name][0]
+                when_to_apply = self.lr_schedulers[lr_scheduler_name][1]
+
+                # Only apply if it is the right time
+                if(when_to_apply != "epoch"):
+                    continue
 
                 # Do an appropriate action based on the type of scheduler
                 if(isinstance(lr_scheduler, CustomReduceLROnPlateau)):
                     if(lr_scheduler.step(validation_loss)):
                         did_reduce_lr = True
+
+                elif(isinstance(lr_scheduler, IterExponential)):
+                    lr_scheduler(epoch)
+
                 else:
                     print("Unknown lr scheduler type \"{}\"".format(str(type(lr_scheduler))))
                     assert(False)
@@ -310,6 +316,33 @@ class BaseTrainer:
             if(step != 0):
                 total_time_taken_seconds += float(end_time - start_time)
                 number_of_losses_to_use_for_average_time += 1
+
+            # Apply the lR schduler
+            for lr_scheduler_name in self.lr_schedulers.keys():
+
+                # Get the scheduler
+                lr_scheduler = self.lr_schedulers[lr_scheduler_name][0]
+                when_to_apply = self.lr_schedulers[lr_scheduler_name][1]
+
+                # Only apply if it is the right time
+                if(when_to_apply != "iteration"):
+                    continue
+
+                # Compute what totol step we are on
+                total_step = (epoch * len(self.training_loader)) + step
+
+                # Do an appropriate action based on the type of scheduler
+                if(isinstance(lr_scheduler, CustomReduceLROnPlateau)):
+                    if(lr_scheduler.step(validation_loss)):
+                        did_reduce_lr = True
+
+                elif(isinstance(lr_scheduler, IterExponential)):
+                    lr_scheduler(total_step)
+
+                else:
+                    print("Unknown lr scheduler type \"{}\"".format(str(type(lr_scheduler))))
+                    assert(False)
+
 
 
             # keep track of the average loss
@@ -625,8 +658,16 @@ class BaseTrainer:
 
             # Get the LR scheduler type
             lr_scheduler_type = get_mandatory_config("type", lr_scheduler_configs, "lr_scheduler_configs")
+            lr_scheduler_when_to_apply = get_mandatory_config("when_to_apply", lr_scheduler_configs, "lr_scheduler_configs")
 
-            if(lr_scheduler_type == "ReduceLROnPlateau"):
+            # Make sure its valid
+            assert(lr_scheduler_when_to_apply in ["iteration", "epoch"])
+
+            # If we dont want a lr scheduler then we just move on
+            if(lr_scheduler_type == "Disabled"):
+                continue
+
+            elif(lr_scheduler_type == "ReduceLROnPlateau"):
 
                 # Get all the specific configs
                 threshold = get_mandatory_config("threshold", lr_scheduler_configs, "lr_scheduler_configs")
@@ -639,12 +680,23 @@ class BaseTrainer:
                 # Create the scheduler
                 lr_scheduler = CustomReduceLROnPlateau(optimizer, mode="min", threshold=threshold, factor=factor, patience=patience, cooldown=cooldown, min_lr=min_lr, verbose=verbose)
 
+
+            elif(lr_scheduler_type == "IterExponential"):
+
+                # Get all the specific configs
+                total_iter_length = get_mandatory_config("total_iter_length", lr_scheduler_configs, "lr_scheduler_configs")
+                final_ratio = get_mandatory_config("final_ratio", lr_scheduler_configs, "lr_scheduler_configs")
+                warmup_steps = get_mandatory_config("warmup_steps", lr_scheduler_configs, "lr_scheduler_configs")
+
+                # Create the scheduler
+                lr_scheduler = IterExponential(total_iter_length, final_ratio, warmup_steps)
+
             else:
                 print("Unknown lr scheduler type \"{}\"".format(lr_scheduler_type))
                 assert(False)
 
             # add it to the list of schedulers
-            lr_schedulers[optimizer_name] = lr_scheduler
+            lr_schedulers[optimizer_name] = (lr_scheduler, lr_scheduler_when_to_apply)
 
         return lr_schedulers    
 
@@ -703,8 +755,9 @@ class BaseTrainer:
 
         # Save the lr_schedulers
         lr_schedulers_save_dicts = dict()
-        for lr_scheduler in self.lr_schedulers.keys():
-            lr_schedulers_save_dicts[lr_scheduler] = self.lr_schedulers[lr_scheduler].state_dict()
+        for lr_scheduler_name in self.lr_schedulers.keys():
+            lr_scheduler = self.lr_schedulers[lr_scheduler_name][0]
+            lr_schedulers_save_dicts[lr_scheduler_name] = lr_scheduler.state_dict()
         checkpoint_dict["lr_schedulers"] = lr_schedulers_save_dicts
 
         # Save the early stopping
@@ -807,7 +860,7 @@ class BaseTrainer:
         # load the lr_schedulers
         lr_schedulers_save_dicts = checkpoint_dict["lr_schedulers"]
         for lr_scheduler_name in self.lr_schedulers.keys():
-            self.lr_schedulers[lr_scheduler_name].load_state_dict(lr_schedulers_save_dicts[lr_scheduler_name])
+            self.lr_schedulers[lr_scheduler_name][0].load_state_dict(lr_schedulers_save_dicts[lr_scheduler_name])
 
         # Load the early stopping
         self.early_stopping.load_from_dict(checkpoint_dict["early_stopping"])
