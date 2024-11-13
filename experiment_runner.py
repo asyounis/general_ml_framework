@@ -10,6 +10,7 @@ import gc
 # Package Imports
 import yaml
 import torch
+from prettytable import PrettyTable
 
 # Project Imports
 from .utils.config import *
@@ -173,6 +174,8 @@ class ExperimentRunner:
             assert(len(device) > 1)
             model = torch.nn.DataParallel(model, device_ids=device)
 
+        # Print the model stats
+        self._print_model_stats(model, logger)
 
         # Detect if this is a training or evaluation and do the right thing
         experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
@@ -282,3 +285,42 @@ class ExperimentRunner:
         args = parser.parse_args()
 
         return args
+
+
+
+    def _print_model_stats(self, model, logger):
+
+        # Get the total number of parameters
+        total_num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                
+        # Get the number of parameters for each of the sub-models
+        sub_model_dict = model.get_submodels()
+        sub_model_num_params = dict()
+        for sub_model_name in sub_model_dict:
+            sub_model = sub_model_dict[sub_model_name]
+            sub_model_num_params[sub_model_name] = sum(p.numel() for p in sub_model.parameters() if p.requires_grad)
+        
+
+        # Display them nicely
+        table = PrettyTable()
+        table.field_names = ["Model Name", "Number of Trainable Parameters"]
+
+        # Add in the main model
+        table.add_row(["full model", "{:,d}".format(total_num_params)])
+
+        # Add in the sub models
+        for sub_model_name in sub_model_num_params:
+            table.add_row(["{:}".format(sub_model_name), "{:,d}".format(sub_model_num_params[sub_model_name])])
+
+        # Add indent to the table and print it
+        table_str = str(table)
+        table_str = table_str.split("\n")
+        table_str = ["\t{}".format(ts) for ts in table_str]
+        table_str = "\n".join(table_str)
+
+        # Print!
+        logger.log("\n")
+        logger.log("Model Stats:")
+        logger.log(table_str)
+        logger.log("\n")
+
