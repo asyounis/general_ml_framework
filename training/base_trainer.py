@@ -4,6 +4,7 @@ import copy
 import sys
 import re
 import time
+import gc
 
 # Package Imports
 import yaml
@@ -45,7 +46,6 @@ class BaseTrainer:
         # How often to write the data plotter
         self.data_plotter_plot_modulo = get_optional_config_with_default("data_plotter_plot_modulo", self.training_configs, "training_configs", default_value=256)
 
-
         # Extract the dataset configs
         dataset_usage_configs = get_mandatory_config_as_type("dataset_usage_configs", self.training_configs, "training_configs", dict)
         training_dataset_name = get_mandatory_config("training_dataset_name", dataset_usage_configs, "dataset_usage_configs")
@@ -57,6 +57,9 @@ class BaseTrainer:
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
         self.do_checkpointing = get_optional_config_with_default("do_checkpointing", self.training_configs, "training_configs", default_value=True)
+        self.do_garbage_collection_after_each_iteration = get_optional_config_with_default("do_garbage_collection_after_each_iteration", self.training_configs, "training_configs", default_value=False)
+        self.clear_gpu_cache_after_each_iteration = get_optional_config_with_default("clear_gpu_cache_after_each_iteration", self.training_configs, "training_configs", default_value=False)
+
 
         # Log so we have a record
         self.logger.log("")
@@ -289,9 +292,9 @@ class BaseTrainer:
         assert(loss is not None)
 
         # keep track of the average loss
-        total_loss += loss.item() * batch_size
+        total_loss += loss.detach().cpu().item() * batch_size
         number_of_losses_to_use_for_average_loss += batch_size
-        self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+        self.data_plotters["training_iteration_loss"].add_value(loss.detach().cpu().item())
 
         # Go through all the data once
         t = tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1, desc="Training Epoch")
@@ -301,7 +304,7 @@ class BaseTrainer:
             step = step_tmp + 1
 
             # Start the timer
-            start_time = time.time()
+            start_time = time.perf_counter()
 
             # Do a training step
             loss, batch_size = self._do_training_step(step, data)
@@ -309,7 +312,17 @@ class BaseTrainer:
                 continue
 
             # Stop the timer
-            end_time = time.time()
+            end_time = time.perf_counter()
+
+            # If we should do the garbage collection
+            # Note: this slows down the execution a bit
+            if(self.do_garbage_collection_after_each_iteration):
+                gc.collect()
+
+            # If we should do the cache clearing
+            # Note: this slows down the execution a bit
+            if(self.clear_gpu_cache_after_each_iteration):
+                torch.cuda.empty_cache()  
 
             # record the elapsed time but skip the first step since there is a JIT compile that may run 
             # and that can skew the time
@@ -343,10 +356,8 @@ class BaseTrainer:
                     print("Unknown lr scheduler type \"{}\"".format(str(type(lr_scheduler))))
                     assert(False)
 
-
-
             # keep track of the average loss
-            total_loss += loss.item() * batch_size
+            total_loss += loss.detach().cpu().item() * batch_size
             number_of_losses_to_use_for_average_loss += batch_size
 
             # Add the loss for the batch so we can do step losses
@@ -354,6 +365,9 @@ class BaseTrainer:
 
             # Do any project specific actions 
             self.project_specific_end_of_training_batch_fn(epoch, step_tmp)
+
+            # delete the loss to help with memory
+            del loss
 
         # Compute the average loss
         average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
@@ -460,7 +474,7 @@ class BaseTrainer:
                 data["model_control_parameters"] = self.model_control_parameters
 
                 # Start the timer
-                start_time = time.time()
+                start_time = time.perf_counter()
 
                 # Do the forward pass over the data
                 loss, batch_size = self.do_forward_pass(data)
@@ -470,7 +484,17 @@ class BaseTrainer:
                     continue
 
                 # Stop the timer
-                end_time = time.time()
+                end_time = time.perf_counter()
+
+                # If we should do the garbage collection
+                # Note: this slows down the execution a bit
+                if(self.do_garbage_collection_after_each_iteration):
+                    gc.collect()
+
+                # If we should do the cache clearing
+                # Note: this slows down the execution a bit
+                if(self.clear_gpu_cache_after_each_iteration):
+                    torch.cuda.empty_cache()  
 
                 # record the elapsed time but skip the first step since there is a JIT compile that may run 
                 # and that can skew the time
@@ -479,7 +503,7 @@ class BaseTrainer:
                     number_of_losses_to_use_for_average_time += 1
 
                 # keep track of the average loss
-                total_loss += loss.item() * batch_size
+                total_loss += loss.detach().cpu().item() * batch_size
                 number_of_losses_to_use_for_average_loss += batch_size
 
                 # Add the loss for the batch so we can do step losses

@@ -169,13 +169,13 @@ class ExperimentRunner:
             pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
             ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
 
+        # Print the model stats
+        self._print_model_stats(model, logger)
+
         # If we have more than 1 Device then we should be in parallel mode
         if(isinstance(device, list)):
             assert(len(device) > 1)
             model = torch.nn.DataParallel(model, device_ids=device)
-
-        # Print the model stats
-        self._print_model_stats(model, logger)
 
         # Detect if this is a training or evaluation and do the right thing
         experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
