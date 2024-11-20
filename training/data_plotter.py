@@ -12,6 +12,32 @@ from ..utils.config import *
 from ..utils.general import *
 
 
+
+class DummyDataPlotter:
+    def __init__(self, title, x_axis_label, y_axis_label, save_dir, filename, moving_average_length=1, plot_modulo=250, save_raw_data=False):
+        return
+
+    def add_vertical_line(self):
+        return
+
+
+    def add_value(self, value):
+        return
+
+
+    def plot_and_save(self):
+        return
+
+
+
+
+    def get_save_dict(self):
+        save_dict = dict()
+        return save_dict
+
+    def load_from_dict(self, saved_dict):
+        return
+
 class DataPlotter:
     def __init__(self, title, x_axis_label, y_axis_label, save_dir, filename, moving_average_length=1, plot_modulo=250, save_raw_data=False):
 

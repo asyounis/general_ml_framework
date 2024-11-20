@@ -15,14 +15,15 @@ from prettytable import PrettyTable
 # Project Imports
 from ..utils.config import *
 from ..utils.general import *
-from .data_plotter import DataPlotter
+from ..utils.distributed import *
+from .data_plotter import DataPlotter, DummyDataPlotter
 from .early_stopping import EarlyStopping
 from ..model_saver_loader import ModelSaverLoader
 from .lr_schedulers.CustomReduceLROnPlateau import CustomReduceLROnPlateau
 from .lr_schedulers.IterExponential import IterExponential
 
 class BaseTrainer:
-    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, dataset_create_fn, load_from_checkpoint):
+    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, dataset_create_fn, load_from_checkpoint, distributed_execution_parameters):
 
         # Save in case we need it
         self.experiment_name = experiment_name
@@ -31,6 +32,13 @@ class BaseTrainer:
         self.logger = logger
         self.device = device
         self.model = model
+        self.distributed_execution_parameters = distributed_execution_parameters
+
+        # Unpack the distributed_execution_parameters
+        self.is_using_distributed = distributed_execution_parameters["is_using_distributed"]
+        self.distributed_rank = distributed_execution_parameters["rank"]
+        self.distributed_world_size = distributed_execution_parameters["world_size"]
+        self.distributed_is_master = (self.is_using_distributed == False) or ((self.distributed_rank is not None) and (self.distributed_rank == 0))
 
         # Extract the mandatory training configs
         self.training_configs = get_mandatory_config("training_configs", experiment_configs, "experiment_configs")
@@ -53,13 +61,11 @@ class BaseTrainer:
 
         # Extract the optional configs
         self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
-        self.accumulate_gradients_counter = get_optional_config_with_default("accumulate_gradients_counter", self.training_configs, "training_configs", default_value=1)
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
         self.do_checkpointing = get_optional_config_with_default("do_checkpointing", self.training_configs, "training_configs", default_value=True)
         self.do_garbage_collection_after_each_iteration = get_optional_config_with_default("do_garbage_collection_after_each_iteration", self.training_configs, "training_configs", default_value=False)
         self.clear_gpu_cache_after_each_iteration = get_optional_config_with_default("clear_gpu_cache_after_each_iteration", self.training_configs, "training_configs", default_value=False)
-
 
         # Log so we have a record
         self.logger.log("")
@@ -71,12 +77,11 @@ class BaseTrainer:
         # and allow the user to tell the model to do special things (like select modes and what not)
         self.model_control_parameters = get_optional_config_with_default("model_control_parameters", self.training_configs, "training_configs", default_value=dict())
 
-
         # See if we should use the one passed in or the one loaded from the file
         if(load_from_checkpoint is None):
-            self.load_from_checkpoint = config_load_from_checkpoint
+            load_from_checkpoint = config_load_from_checkpoint
         else:
-            self.load_from_checkpoint = load_from_checkpoint
+            load_from_checkpoint = load_from_checkpoint
 
         # Create the datasets
         dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
@@ -88,7 +93,7 @@ class BaseTrainer:
         self.validation_loader = self._create_data_loaders(batch_sizes, self.validation_dataset, "validation")
 
         # get all the models
-        if(isinstance(self.model, torch.nn.DataParallel)):
+        if(isinstance(self.model, torch.nn.parallel.DistributedDataParallel)):
             self.all_models = self.model.module.get_submodels()
             self.all_models["full_model"] = self.model.module
         else:
@@ -136,16 +141,14 @@ class BaseTrainer:
         self.last_finised_epoch = -1
 
         # Load from the checkpoint
-        self._load_from_checkpoint()
+        if(load_from_checkpoint):
+            print("Loading from a checkpoint is broken right now")
+            assert(False)
+            # self._load_from_checkpoint()
 
         # Create the model saver
-        self.model_saver = ModelSaverLoader(self.all_models, self.save_dir, self.logger)
-
-        # Move the model to the correct device
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            self.model = self.model.to(self.device[0])
-        else:
-            self.model = self.model.to(self.device)
+        if(self.distributed_is_master):
+            self.model_saver = ModelSaverLoader(self.all_models, self.save_dir, self.logger)
 
     def train(self):
 
@@ -153,7 +156,7 @@ class BaseTrainer:
         best_validation_loss = None
 
         # Go through the epochs
-        for epoch in tqdm(range((self.last_finised_epoch+1), self.epochs, 1)):
+        for epoch in distributed_wrap_tqdm(range((self.last_finised_epoch+1), self.epochs, 1), leave=False, desc="Epochs "):
 
             # Do The training pass
             training_loss, average_training_time = self._do_training_epoch(epoch)
@@ -190,7 +193,8 @@ class BaseTrainer:
                 is_best = False
 
             # Save the models
-            self.model_saver.save_models(epoch, is_best)
+            if(self.distributed_is_master):
+                self.model_saver.save_models(epoch, is_best)
 
             # We finished this epoch so record that we finished it
             self.last_finised_epoch = epoch
@@ -230,7 +234,7 @@ class BaseTrainer:
                 self.data_plotters["training_iteration_loss"].add_vertical_line()
 
             # Create the checkpoint for this epoch
-            if(self.do_checkpointing):
+            if(self.do_checkpointing and self.distributed_is_master):
                 self._create_checkpoint(epoch)
 
             # Determine if we should early stop
@@ -257,7 +261,7 @@ class BaseTrainer:
             all_models_with_optimizers = list(self.optimizers.keys())
 
             # Get the main model
-            if(isinstance(self.model, torch.nn.DataParallel)):
+            if(isinstance(self.model, torch.nn.parallel.DistributedDataParallel)):
                 main_model = self.model.module
             else:
                 main_model = self.model
@@ -297,7 +301,7 @@ class BaseTrainer:
         self.data_plotters["training_iteration_loss"].add_value(loss.detach().cpu().item())
 
         # Go through all the data once
-        t = tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1, desc="Training Epoch")
+        t = distributed_wrap_tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1, desc="Training Epoch")
         for step_tmp, data in enumerate(t):
 
             # Add 1 to account for the step we already took
@@ -366,9 +370,6 @@ class BaseTrainer:
             # Do any project specific actions 
             self.project_specific_end_of_training_batch_fn(epoch, step_tmp)
 
-            # delete the loss to help with memory
-            del loss
-
         # Compute the average loss
         average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
 
@@ -401,47 +402,44 @@ class BaseTrainer:
         loss.backward()
 
         # Compute the gradient norm for the models and add it to the data plotters
-        number_of_non_zero_gradient_norms = 0
-        for model_name in self.all_models.keys():
+        if(self.distributed_is_master):
+            number_of_non_zero_gradient_norms = 0
+            for model_name in self.all_models.keys():
 
-            # See if this model even has any parameters before we compute gradient norms
-            if(len(list(self.all_models[model_name].parameters())) != 0):
+                # See if this model even has any parameters before we compute gradient norms
+                if(len(list(self.all_models[model_name].parameters())) != 0):
 
-                # We want L2 Norm
-                norm_type = 2
+                    # We want L2 Norm
+                    norm_type = 2
 
-                # Compute the gradient norm
-                norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
+                    # Compute the gradient norm
+                    norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
 
-                # if there is no norm then we cant compute the norm
-                if(len(norm) != 0):
+                    # if there is no norm then we cant compute the norm
+                    if(len(norm) != 0):
 
-                    # Finish computing the norm 
-                    gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+                        # Finish computing the norm 
+                        gradient_norm = torch.norm(torch.stack(norm) , norm_type)
 
-                    # Add it to the data plotter
-                    data_plotter_name = "gradient_norm_{}".format(model_name)
-                    self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
+                        # Add it to the data plotter
+                        data_plotter_name = "gradient_norm_{}".format(model_name)
+                        self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
 
-                    # We have a non zero norm!
-                    number_of_non_zero_gradient_norms += 1
+                        # We have a non zero norm!
+                        number_of_non_zero_gradient_norms += 1
 
-        # Make sure we have some gradients
-        if(number_of_non_zero_gradient_norms == 0):
-            print("No gradients present!!")
-            return None, None
+            # Make sure we have some gradients
+            if(number_of_non_zero_gradient_norms == 0):
+                print("No gradients present!!")
+                return None, None
 
+        # if we have a gradient clipping value then do the clipping
+        if(self.gradient_clip_value is not None):
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_value)
 
-        # Check if we are in a condition to take an optimization step and if so take the step
-        if((((step+1) % self.accumulate_gradients_counter) == 0) or ((step+1) == len(self.training_loader))):
-
-            # if we have a gradient clipping value then do the clipping
-            if(self.gradient_clip_value is not None):
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_value)
-
-            # Take an optimization step
-            for optimizer in self.optimizers.values():
-                optimizer.step()
+        # Take an optimization step
+        for optimizer in self.optimizers.values():
+            optimizer.step()
 
         return loss, batch_size
 
@@ -464,7 +462,7 @@ class BaseTrainer:
             number_of_losses_to_use_for_average_time = 0
 
             # Go through all the data once    
-            t = tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader), desc="Validation Epoch")
+            t = distributed_wrap_tqdm(iter(self.validation_loader), leave=False, total=len(self.validation_loader), desc="Validation Epoch")
             for step, data in enumerate(t):
         
                 # Add that this is a training stage
@@ -529,7 +527,6 @@ class BaseTrainer:
         # get the batch size
         batch_size = batch_sizes[dataset_type]
 
-
         # Check if the dataset has a custom collate function we should be using
         has_custom_collate_function = getattr(dataset, "get_collate_function", None)
         if callable(has_custom_collate_function):
@@ -543,8 +540,21 @@ class BaseTrainer:
         else:
             shuffle_data = False
 
-        # Create the data-loader
-        dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
+        if(self.is_using_distributed):
+
+            # If we are using distributed then we need to specify a sampler
+            sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=self.distributed_world_size, rank=self.distributed_rank, shuffle=shuffle_data, drop_last=False)
+                
+            # The batch size has to be per GPU so we
+            assert((batch_size % self.distributed_world_size) == 0)
+            batch_size = batch_size // self.distributed_world_size
+
+            # Create the data-loader
+            dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function, sampler=sampler)
+
+        else:
+            # Create the data-loader
+            dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
 
         return dataloader
 
@@ -699,10 +709,9 @@ class BaseTrainer:
                 patience = get_mandatory_config("patience", lr_scheduler_configs, "lr_scheduler_configs")
                 cooldown = get_mandatory_config("cooldown", lr_scheduler_configs, "lr_scheduler_configs")
                 min_lr = get_mandatory_config("min_lr", lr_scheduler_configs, "lr_scheduler_configs")
-                verbose = get_mandatory_config("verbose", lr_scheduler_configs, "lr_scheduler_configs")
 
                 # Create the scheduler
-                lr_scheduler = CustomReduceLROnPlateau(optimizer, mode="min", threshold=threshold, factor=factor, patience=patience, cooldown=cooldown, min_lr=min_lr, verbose=verbose)
+                lr_scheduler = CustomReduceLROnPlateau(optimizer, mode="min", threshold=threshold, factor=factor, patience=patience, cooldown=cooldown, min_lr=min_lr)
 
 
             elif(lr_scheduler_type == "IterExponential"):
@@ -727,25 +736,29 @@ class BaseTrainer:
 
     def _create_data_plotters(self, data_plotter_plot_modulo):
 
+        if(self.distributed_is_master):
+            dataplotter_cls = DataPlotter
+        else:
+            dataplotter_cls = DummyDataPlotter
+
         all_data_plotters = dict()
         
         # Create the epoch training and validation plotters
-        all_data_plotters["training_epoch_loss"] = DataPlotter("Training Loss per Epoch", "Epoch", "Training Loss", self.save_dir, "training_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
-        all_data_plotters["validation_epoch_loss"] = DataPlotter("Validation Loss per Epoch", "Epoch", "Validation Loss", self.save_dir, "validation_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["training_epoch_loss"] = dataplotter_cls("Training Loss per Epoch", "Epoch", "Training Loss", self.save_dir, "training_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["validation_epoch_loss"] = dataplotter_cls("Validation Loss per Epoch", "Epoch", "Validation Loss", self.save_dir, "validation_loss_epoch.png", plot_modulo=data_plotter_plot_modulo)
 
         # Create the iteration training and validation plotters
-        all_data_plotters["training_iteration_loss"] = DataPlotter("Training Loss per Iteration", "Iteration", "Training Loss", self.save_dir, "training_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
-        all_data_plotters["validation_iteration_loss"] = DataPlotter("Validation Loss per Iteration", "Iteration", "Validation Loss", self.save_dir, "validation_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["training_iteration_loss"] = dataplotter_cls("Training Loss per Iteration", "Iteration", "Training Loss", self.save_dir, "training_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
+        all_data_plotters["validation_iteration_loss"] = dataplotter_cls("Validation Loss per Iteration", "Iteration", "Validation Loss", self.save_dir, "validation_loss_iteration.png", plot_modulo=data_plotter_plot_modulo)
         
         # Create the gradient norm data plotters
         gradient_norm_plot_save_dir = "{}/gradient_norms/".format(self.save_dir)
         for model_name in self.all_models.keys():
             data_plotter_name = "gradient_norm_{}".format(model_name)
-            all_data_plotters[data_plotter_name] = DataPlotter("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
-
+            all_data_plotters[data_plotter_name] = dataplotter_cls("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
 
         # Get the project specific data plotters
-        project_specific_dataplotters = self.create_project_specific_dataplotters()
+        project_specific_dataplotters = self.create_project_specific_dataplotters(dataplotter_cls)
         for data_plotter_name in project_specific_dataplotters:
             assert(data_plotter_name not in all_data_plotters)    
             all_data_plotters[data_plotter_name] = project_specific_dataplotters[data_plotter_name] 
@@ -754,10 +767,63 @@ class BaseTrainer:
         return all_data_plotters
 
 
+    def _get_batch_sizes(self, training_configs, device):
+
+        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
+        # But we need 1 or the other, not both, not none
+        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", training_configs, "training_configs", dict, default_value=None)
+        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", training_configs, "training_configs", dict, default_value=None)
+        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
+            self.logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+        elif(batch_sizes is not None):
+            # nothing to do here
+            pass
+        elif(batch_sizes_per_gpu is not None):
+
+            # Get the number of devices
+            if(isinstance(device, str)):
+                assert("cuda" in device)
+                num_gpus = 1
+            else:
+                # num_gpus = len(device)
+                num_gpus = self.distributed_world_size
+
+            # Compute the batch sizes
+            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
+
+        else:
+            self.logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
+            assert(False)
+
+        # Create a table of all the batch sizes so we can print them
+        table = PrettyTable()
+        table.field_names = ["Dataset Name", "Batch size"]
+        for bsn in batch_sizes.keys():
+            table.add_row([bsn, batch_sizes[bsn]])
+
+        # Add indent to the table and print it
+        table_str = str(table)
+        table_str = table_str.split("\n")
+        table_str = ["\t{}".format(ts) for ts in table_str]
+        table_str = "\n".join(table_str)
+
+        # Print!
+        self.logger.log("\n")
+        self.logger.log("Batch size information:")
+        self.logger.log(table_str)
+        self.logger.log("\n")
+
+        return batch_sizes
+
+
     def _create_checkpoint(self, epoch):
         '''
             Checkpoint this trainer 
         '''
+
+        # Disabled For now
+        return
 
         # The dict we will use to save all the checkpointed data
         checkpoint_dict = dict()
@@ -795,7 +861,7 @@ class BaseTrainer:
         
         # Save the whole model
         # We dont care about any internal models, just the whole model for checkpointing
-        if(isinstance(self.model, torch.nn.DataParallel)):
+        if(isinstance(self.model, torch.nn.parallel.DistributedDataParallel)):
             checkpoint_dict["model"] = self.model.module.state_dict()
         else:
             checkpoint_dict["model"] = self.model.state_dict()
@@ -818,10 +884,6 @@ class BaseTrainer:
         '''
             Load this trainer from a checkpoint if we can and are told to
         '''
-
-        # First check if we should load from a checkpoint.
-        if(self.load_from_checkpoint == False):
-            return
 
         # Check to see if the checkpoint directory exists
         checkpoint_dir = "{}/checkpoints".format(self.save_dir)
@@ -897,67 +959,17 @@ class BaseTrainer:
 
         # Load the model
         model_state_dict = checkpoint_dict["model"]
-        if(isinstance(self.model, torch.nn.DataParallel)):
+        if(isinstance(self.model, torch.nn.parallel.DistributedDataParallel)):
             self.model.module.load_state_dict(model_state_dict)
         else:
             self.model.load_model_state_dict(state_dict)
-
-
-
-    def _get_batch_sizes(self, training_configs, device):
-
-        # Extract the batch size configs. We can either do a total batch size or a batch size per GPU.
-        # But we need 1 or the other, not both, not none
-        batch_sizes = get_optional_config_as_type_with_default("batch_sizes", training_configs, "training_configs", dict, default_value=None)
-        batch_sizes_per_gpu = get_optional_config_as_type_with_default("batch_sizes_per_gpu", training_configs, "training_configs", dict, default_value=None)
-        if((batch_sizes is not None) and (batch_sizes_per_gpu is not None)):
-            self.logger.log_error("Cannot define both \"batch_sizes\" and \"batch_sizes_per_gpu\"")
-            assert(False)
-        elif(batch_sizes is not None):
-            # nothing to do here
-            pass
-        elif(batch_sizes_per_gpu is not None):
-
-            # Get the number of devices
-            if(isinstance(device, str)):
-                assert("cuda" in device)
-                num_gpus = 1
-            else:
-                num_gpus = len(device)
-
-            # Compute the batch sizes
-            batch_sizes = {k:(batch_sizes_per_gpu[k]*num_gpus) for k in batch_sizes_per_gpu.keys()}
-            
-        else:
-            self.logger.log_error("Must define at least one of \"batch_sizes\" and \"batch_sizes_per_gpu\"")
-            assert(False)
-
-        # Create a table of all the batch sizes so we can print them
-        table = PrettyTable()
-        table.field_names = ["Dataset Name", "Batch size"]
-        for bsn in batch_sizes.keys():
-            table.add_row([bsn, batch_sizes[bsn]])
-
-        # Add indent to the table and print it
-        table_str = str(table)
-        table_str = table_str.split("\n")
-        table_str = ["\t{}".format(ts) for ts in table_str]
-        table_str = "\n".join(table_str)
-
-        # Print!
-        self.logger.log("\n")
-        self.logger.log("Batch size information:")
-        self.logger.log(table_str)
-        self.logger.log("\n")
-
-        return batch_sizes
 
 
     def do_forward_pass(self, data):
         raise NotImplemented
 
 
-    def create_project_specific_dataplotters(self):
+    def create_project_specific_dataplotters(self, dataplotter_cls):
         return dict()
 
 

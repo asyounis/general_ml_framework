@@ -7,6 +7,7 @@ import argparse
 import time 
 import gc
 
+
 # Package Imports
 import yaml
 import torch
@@ -15,6 +16,7 @@ from prettytable import PrettyTable
 # Project Imports
 from .utils.config import *
 from .utils.general import *
+from .utils.distributed import *
 from .config_file_loader import ConfigFileLoader
 from .device_selector import DeviceSelector
 from .model_saver_loader import ModelSaverLoader
@@ -132,8 +134,9 @@ class ExperimentRunner:
         save_dir = "{}/run_{:04d}/".format(save_dir, run_number)
         ensure_directory_exists(save_dir)
 
-        # Create the Logger
+        # Create the Logger and create a new file for it
         logger = Logger(save_dir)
+        logger.create_new_log_file()
 
         # Print some info
         logger.log("\n\n")
@@ -152,44 +155,45 @@ class ExperimentRunner:
         logger.log("Save Directory : {}".format(save_dir))
         logger.log("")
 
-        # Make the model
-        model = self._create_model(experiment_configs_copy)
-
-        # Init the model
-        model_init_configs = get_optional_config_with_default("model_init_configs", experiment_configs_copy, "experiment_configs_copy", default_value=None)
-        model.init(model_init_configs)
-
-        # Load the model!
-        if("pretrained_models" in experiment_configs_copy):
-            pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
-            ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
-
-        # Load the model!
-        if("pretrained_models" in experiment_configs_copy):
-            pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs_copy, "experiment_configs_copy")
-            ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
-
-        # Print the model stats
-        self._print_model_stats(model, logger)
-
-        # If we have more than 1 Device then we should be in parallel mode
-        if(isinstance(device, list)):
-            assert(len(device) > 1)
-            model = torch.nn.DataParallel(model, device_ids=device)
-
         # Detect if this is a training or evaluation and do the right thing
         experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
         if(experiment_type == "training"):
-            self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device, model)
+            self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device)
 
         elif(experiment_type == "evaluation"):
-            self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device, model)
+            self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device)
 
         else:
             print("Unknown experiment type \"{}\"".format(experiment_type))
             assert(False)
 
-    def _run_training(self, experiment_name, experiment_configs, save_dir, logger, device, model):
+
+    def _run_training_helper(self, rank, world_size, master_port, experiment_name, experiment_configs, save_dir, devices):
+
+        distributed_setup(rank, world_size, master_port)
+
+
+        # Create a logger
+        logger = Logger(save_dir, distributed_rank=rank)
+
+        # Make the model
+        model = self._create_model(experiment_configs)
+
+        # Print the model stats
+        if(rank == 0):
+            self._print_model_stats(model, logger)        
+
+        # Select the device we will use for the training
+        if(isinstance(devices, list)):
+            device = devices[rank]
+        else:
+            device = devices
+
+        # Move the model to the correct device
+        model = model.to(device)
+
+        # Wrap it in the DistributedDataParallel
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
 
         # Get training type
         training_type = get_mandatory_config("training_type", experiment_configs, "experiment_configs")
@@ -199,15 +203,51 @@ class ExperimentRunner:
             print("Unknown trainer type \"{}\"".format(training_type))
             assert(False)
 
+        # Create the distributed parameters
+        distributed_execution_parameters = dict()
+        distributed_execution_parameters["is_using_distributed"] = True
+        distributed_execution_parameters["rank"] = rank
+        distributed_execution_parameters["world_size"] = world_size
+
         # Create the trainer
         trainer_cls = self.trainer_classes[training_type]
-        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, self._create_dataset, self.load_from_checkpoint)
+        trainer = trainer_cls(experiment_name, experiment_configs, save_dir, logger, device, model, self._create_dataset, self.load_from_checkpoint, distributed_execution_parameters)
 
         # train!!
         trainer.train()
 
+        # Cleanup afterwards
+        distributed_cleanup()
+
+    def _run_training(self, experiment_name, experiment_configs, save_dir, logger, devices):
+
+
+        # The world size is the number of devices
+        if(isinstance(devices, list)):
+            world_size = len(devices)
+        else:
+            world_size = 1
+
+
+        # Get a random unsused port for all the comms to go through
+        master_port = distributed_get_open_port()
+        logger.log("Distributed Master Port: {}".format(master_port))
+
+        # Spawn all the training jobs
+        torch.multiprocessing.spawn(
+            self._run_training_helper,
+            args=(world_size, master_port, experiment_name, experiment_configs, save_dir, devices),
+            nprocs=world_size
+            )
+
 
     def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device, model):
+
+        # Make the model
+        model = self._create_model(experiment_configs_copy)
+
+        # Print the model stats
+        self._print_model_stats(model, logger)
 
         # Get evaluation type
         evaluation_type = get_mandatory_config("evaluation_type", experiment_configs, "experiment_configs")
@@ -261,8 +301,17 @@ class ExperimentRunner:
         model_cls = self.model_classes[main_model_type]
         model = model_cls(model_configs, self.model_architecture_configs)
 
-        return model
+        # Init the model
+        model_init_configs = get_optional_config_with_default("model_init_configs", experiment_configs, "experiment_configs", default_value=None)
+        model.init(model_init_configs)
 
+        # Load the model!
+        if("pretrained_models" in experiment_configs):
+            pretrained_models_configs = get_mandatory_config("pretrained_models", experiment_configs, "experiment_configs")
+            ModelSaverLoader.load_models(model, pretrained_models_configs, logger)
+
+
+        return model
 
     def _parse_cmd_arguments(self):
 
@@ -285,8 +334,6 @@ class ExperimentRunner:
         args = parser.parse_args()
 
         return args
-
-
 
     def _print_model_stats(self, model, logger):
 
