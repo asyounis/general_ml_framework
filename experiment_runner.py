@@ -170,8 +170,8 @@ class ExperimentRunner:
 
     def _run_training_helper(self, rank, world_size, master_port, experiment_name, experiment_configs, save_dir, devices):
 
-        distributed_setup(rank, world_size, master_port)
-
+        if(world_size > 1):
+            distributed_setup(rank, world_size, master_port)
 
         # Create a logger
         logger = Logger(save_dir, distributed_rank=rank)
@@ -193,7 +193,8 @@ class ExperimentRunner:
         model = model.to(device)
 
         # Wrap it in the DistributedDataParallel
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
+        if(world_size > 1):
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
 
         # Get training type
         training_type = get_mandatory_config("training_type", experiment_configs, "experiment_configs")
@@ -204,10 +205,17 @@ class ExperimentRunner:
             assert(False)
 
         # Create the distributed parameters
-        distributed_execution_parameters = dict()
-        distributed_execution_parameters["is_using_distributed"] = True
-        distributed_execution_parameters["rank"] = rank
-        distributed_execution_parameters["world_size"] = world_size
+        if(world_size > 1):
+            distributed_execution_parameters = dict()
+            distributed_execution_parameters["is_using_distributed"] = True
+            distributed_execution_parameters["rank"] = rank
+            distributed_execution_parameters["world_size"] = world_size
+        else:
+            distributed_execution_parameters = dict()
+            distributed_execution_parameters["is_using_distributed"] = False
+            distributed_execution_parameters["rank"] = rank
+            distributed_execution_parameters["world_size"] = world_size
+
 
         # Create the trainer
         trainer_cls = self.trainer_classes[training_type]
@@ -217,7 +225,8 @@ class ExperimentRunner:
         trainer.train()
 
         # Cleanup afterwards
-        distributed_cleanup()
+        if(world_size > 1):
+            distributed_cleanup()
 
     def _run_training(self, experiment_name, experiment_configs, save_dir, logger, devices):
 
@@ -233,13 +242,16 @@ class ExperimentRunner:
         master_port = distributed_get_open_port()
         logger.log("Distributed Master Port: {}".format(master_port))
 
-        # Spawn all the training jobs
-        torch.multiprocessing.spawn(
-            self._run_training_helper,
-            args=(world_size, master_port, experiment_name, experiment_configs, save_dir, devices),
-            nprocs=world_size
-            )
 
+        if(world_size > 1):
+            # Spawn all the training jobs
+            torch.multiprocessing.spawn(
+                self._run_training_helper,
+                args=(world_size, master_port, experiment_name, experiment_configs, save_dir, devices),
+                nprocs=world_size
+                )
+        else:
+            self._run_training_helper(0, world_size, master_port, experiment_name, experiment_configs, save_dir, devices)
 
     def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device, model):
 
