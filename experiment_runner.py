@@ -161,7 +161,7 @@ class ExperimentRunner:
             self._run_training(experiment_name, experiment_configs_copy, save_dir, logger, device)
 
         elif(experiment_type == "evaluation"):
-            self._run_evaluation(experiment_name, experiment_configs, save_dir, logger, device)
+            self._run_evaluation(experiment_name, experiment_configs_copy, save_dir, logger, device)
 
         else:
             print("Unknown experiment type \"{}\"".format(experiment_type))
@@ -177,7 +177,7 @@ class ExperimentRunner:
         logger = Logger(save_dir, distributed_rank=rank)
 
         # Make the model
-        model = self._create_model(experiment_configs)
+        model = self._create_model(experiment_configs, logger)
 
         # Print the model stats
         if(rank == 0):
@@ -253,10 +253,10 @@ class ExperimentRunner:
         else:
             self._run_training_helper(0, world_size, master_port, experiment_name, experiment_configs, save_dir, devices)
 
-    def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device, model):
+    def _run_evaluation(self, experiment_name, experiment_configs, save_dir, logger, device):
 
         # Make the model
-        model = self._create_model(experiment_configs_copy)
+        model = self._create_model(experiment_configs, logger)
 
         # Print the model stats
         self._print_model_stats(model, logger)
@@ -294,7 +294,7 @@ class ExperimentRunner:
 
         return dataset
 
-    def _create_model(self, experiment_configs):
+    def _create_model(self, experiment_configs, logger):
 
         # Extract the model configs
         model_configs = get_mandatory_config("model_configs", experiment_configs, "experiment_configs")

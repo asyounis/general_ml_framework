@@ -15,7 +15,6 @@ class ConfigFileLoader:
         # The list of variables that are reserved for the frameworks internal use
         self.RESERVED_VARIABLES = ["<framework_var_run_number>"]
 
-
         # Load the root config file
         root_configs = self._load_yaml_file(root_config_file)
 
