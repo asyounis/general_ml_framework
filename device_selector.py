@@ -71,7 +71,7 @@ class DeviceSelector:
             free_gpus = self._get_free_gpus(min_free_memory_gb, max_number_of_tasks)
 
             # Get how many gpus we need
-            num_gpus_needed = int(device_selection_string.split(":")[-1])
+            num_gpus_needed = 1
 
             # Make sure we have enough
             if(len(free_gpus) == 0):
