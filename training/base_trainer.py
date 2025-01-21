@@ -758,7 +758,7 @@ class BaseTrainer:
             all_data_plotters[data_plotter_name] = dataplotter_cls("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
 
         # Get the project specific data plotters
-        project_specific_dataplotters = self.create_project_specific_dataplotters(dataplotter_cls)
+        project_specific_dataplotters = self.create_project_specific_dataplotters(dataplotter_cls, data_plotter_plot_modulo)
         for data_plotter_name in project_specific_dataplotters:
             assert(data_plotter_name not in all_data_plotters)    
             all_data_plotters[data_plotter_name] = project_specific_dataplotters[data_plotter_name] 
