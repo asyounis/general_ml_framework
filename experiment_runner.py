@@ -6,6 +6,7 @@ import copy
 import argparse
 import time 
 import gc
+import datetime
 
 
 # Package Imports
@@ -155,6 +156,9 @@ class ExperimentRunner:
         logger.log("Save Directory : {}".format(save_dir))
         logger.log("")
 
+        # Start the timer
+        start_time = time.perf_counter()
+
         # Detect if this is a training or evaluation and do the right thing
         experiment_type = get_mandatory_config("experiment_type", experiment_configs_copy, "experiment_configs_copy")
         if(experiment_type == "training"):
@@ -166,6 +170,30 @@ class ExperimentRunner:
         else:
             print("Unknown experiment type \"{}\"".format(experiment_type))
             assert(False)
+
+
+        # End the timer and save it so we know how long this experiment ran for
+        end_time = time.perf_counter()
+        runtime_seconds = end_time - start_time
+        runtime_minutes = runtime_seconds / 60.0
+        runtime_hours = runtime_minutes / 60.0
+        runtime_days = runtime_hours / 24.0
+        runtime_human_readable = datetime.timedelta(seconds=runtime_seconds)
+
+        # Log some some important things
+        logger.log("")
+        logger.log("Experiment Runtimes:")
+        logger.log("\tRuntime (seconds)   : {:03f}".format(runtime_seconds))
+        logger.log("\tRuntime (minutes)   : {:03f}".format(runtime_minutes))
+        logger.log("\tRuntime (hours)     : {:03f}".format(runtime_hours))
+        logger.log("\tRuntime (days)      : {:03f}".format(runtime_days))
+        logger.log("\tRuntime (Human Readable)   (DD days, HH:MM:SS.SS): {}".format(str(runtime_human_readable)))
+        logger.log("")
+
+
+
+
+
 
 
     def _run_training_helper(self, rank, world_size, master_port, experiment_name, experiment_configs, save_dir, devices):
