@@ -969,7 +969,7 @@ class BaseTrainer:
         raise NotImplemented
 
 
-    def create_project_specific_dataplotters(self, dataplotter_cls):
+    def create_project_specific_dataplotters(self, dataplotter_cls, data_plotter_plot_modulo):
         return dict()
 
 
