@@ -183,10 +183,10 @@ class ExperimentRunner:
         # Log some some important things
         logger.log("")
         logger.log("Experiment Runtimes:")
-        logger.log("\tRuntime (seconds)   : {:03f}".format(runtime_seconds))
-        logger.log("\tRuntime (minutes)   : {:03f}".format(runtime_minutes))
-        logger.log("\tRuntime (hours)     : {:03f}".format(runtime_hours))
-        logger.log("\tRuntime (days)      : {:03f}".format(runtime_days))
+        logger.log("\tRuntime (seconds)   : {:03f} seconds".format(runtime_seconds))
+        logger.log("\tRuntime (minutes)   : {:03f} minutes".format(runtime_minutes))
+        logger.log("\tRuntime (hours)     : {:03f} hours".format(runtime_hours))
+        logger.log("\tRuntime (days)      : {:03f} days".format(runtime_days))
         logger.log("\tRuntime (Human Readable)   (DD days, HH:MM:SS.SS): {}".format(str(runtime_human_readable)))
         logger.log("")
 
