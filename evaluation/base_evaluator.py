@@ -14,7 +14,7 @@ from ..model_saver_loader import ModelSaverLoader
 from .metric_pretty_printer import MetricPrettyPrinter
 
 class BaseEvaluator:
-    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, evaluation_dataset, metrics_classes):
+    def __init__(self, experiment_name, experiment_configs, save_dir, logger, device, model, dataset_create_fn, metrics_classes):
 
         # Save in case we need it
         self.experiment_name = experiment_name
@@ -23,13 +23,18 @@ class BaseEvaluator:
         self.logger = logger
         self.device = device
         self.model = model
-        self.evaluation_dataset = evaluation_dataset
+        self.dataset_create_fn = dataset_create_fn
         self.metrics_classes = metrics_classes
 
         # Extract the mandatory training configs
         self.evaluation_configs = get_mandatory_config("evaluation_configs", experiment_configs, "experiment_configs")
         self.quantitative_config = get_mandatory_config_as_type("quantitative_config", self.evaluation_configs, "evaluation_configs", dict)
         self.qualitative_config = get_mandatory_config_as_type("qualitative_config", self.evaluation_configs, "evaluation_configs", dict)
+
+        # Get dataset config file names and convert them from a list to a mapping
+        self.dataset_configs_files = get_mandatory_config_as_type("dataset_configs_files", experiment_configs, "experiment_configs", list)
+        self.dataset_configs_files_mapping = dict()
+        [self.dataset_configs_files_mapping.update(dcf) for dcf in self.dataset_configs_files]
 
         # Check if we are going to run the quantitative and qualitative 
         self.quantitative_do_run = get_mandatory_config("do_run", self.quantitative_config, "quantitative_config")
@@ -107,15 +112,6 @@ class BaseEvaluator:
 
         # Get the configs
         batch_sizes = self._get_batch_sizes(self.quantitative_config, self.device)
-
-        # all_ranges = []
-        # for i in tqdm(range(len(self.evaluation_dataset))):
-        #     all_ranges.append(self.evaluation_dataset[i])
-        # torch.save(all_ranges, "/scratch/ali/Development/particle_2D_localization/experiments/mapillary/mdpf_forward/ranges.pt")
-        # print(min(all_ranges))
-        # print(max(all_ranges))
-        # exit()
-
 
         # create the dataloaders
         evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, self.evaluation_dataset, "evaluation")

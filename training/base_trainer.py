@@ -84,9 +84,9 @@ class BaseTrainer:
             load_from_checkpoint = load_from_checkpoint
 
         # Create the datasets
-        dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
-        self.training_dataset = dataset_create_fn(dataset_configs, training_dataset_name)
-        self.validation_dataset = dataset_create_fn(dataset_configs, validation_dataset_name)
+        dataset_config_files = get_mandatory_config("dataset_config_files", experiment_configs, "experiment_configs")
+        self.training_dataset, self.validation_dataset = self._create_datasets(dataset_config_files, dataset_create_fn, training_dataset_name, validation_dataset_name)
+
 
         # create the dataloaders
         self.training_loader = self._create_data_loaders(batch_sizes, self.training_dataset, "training")
@@ -515,6 +515,44 @@ class BaseTrainer:
 
             return average_loss, average_time
 
+
+    def _create_datasets(self, dataset_config_files, dataset_create_fn, training_dataset_name, validation_dataset_name):
+
+        # Collapse from a list of dicts to just a list of the dataset config files
+        dataset_config_files_list = []
+        for dcf_dict in dataset_config_files:
+
+            # Extract the file from the dict, throwing away the name
+            dcf_name = list(dcf_dict.keys())[0]
+            dcf = dcf_dict[dcf_name]
+
+            # Make sure its unique
+            assert(dcf not in dataset_config_files_list)
+
+            # Save it
+            dataset_config_files_list.append(dcf)
+
+        # Create the training and validation datasets
+        training_datasets = [dataset_create_fn(dcf, training_dataset_name) for dcf in dataset_config_files_list]
+        validation_datasets = [dataset_create_fn(dcf, validation_dataset_name) for dcf in dataset_config_files_list]
+
+        # If we only have 1 dataset then return it
+        if(len(training_datasets) == 1):
+            return training_datasets[0], validation_datasets[0]
+
+        else:
+            # Make sure no dataset has a custom collate function because this wont work with multiple datasets right now
+            for dataset in training_datasets:
+                assert(getattr(dataset, "get_collate_function", None) is None)
+            for dataset in validation_datasets:
+                assert(getattr(dataset, "get_collate_function", None) is None)
+
+        # Concat them all
+        training_dataset = torch.utils.data.ConcatDataset(training_datasets)
+        validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
+
+        # return them
+        return training_dataset, validation_dataset
 
     def _create_data_loaders(self, batch_sizes, dataset, dataset_type):
 

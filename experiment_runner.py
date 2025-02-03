@@ -17,6 +17,7 @@ from prettytable import PrettyTable
 # Project Imports
 from .utils.config import *
 from .utils.general import *
+from .utils.yaml import *
 from .utils.distributed import *
 from .config_file_loader import ConfigFileLoader
 from .device_selector import DeviceSelector
@@ -297,18 +298,18 @@ class ExperimentRunner:
             print("Unknown evaluation type \"{}\"".format(evaluation_type))
             assert(False)
 
-        # Create the datasets
-        dataset_configs = get_mandatory_config("dataset_configs", experiment_configs, "experiment_configs")
-        evaluation_dataset = self._create_dataset(dataset_configs, "evaluation")
-
         # Create the trainer
         evaluator_cls = self.evaluator_classes[evaluation_type]
-        evaluator = evaluator_cls(experiment_name, experiment_configs, save_dir, logger, device, model, evaluation_dataset, self.metric_classes)
+        evaluator = evaluator_cls(experiment_name, experiment_configs, save_dir, logger, device, model, self._create_dataset, self.metric_classes)
 
         # evaluate!!
         evaluator.evaluate()
 
-    def _create_dataset(self, dataset_configs, dataset_type):
+    def _create_dataset(self, dataset_config_file, dataset_type):
+
+        # Load the file
+        dataset_configs = load_yaml_file(dataset_config_file)
+        dataset_configs = dataset_configs["dataset_configs"]
 
         # get the name of the datasets
         dataset_name = get_mandatory_config("dataset_name", dataset_configs, "dataset_configs")

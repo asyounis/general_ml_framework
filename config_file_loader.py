@@ -8,6 +8,7 @@ import yaml
 
 # Project Imports
 from .utils.config import *
+from .utils.yaml import *
 
 class ConfigFileLoader:
     def __init__(self, root_config_file):
@@ -16,7 +17,7 @@ class ConfigFileLoader:
         self.RESERVED_VARIABLES = ["<framework_var_run_number>"]
 
         # Load the root config file
-        root_configs = self._load_yaml_file(root_config_file)
+        root_configs = load_yaml_file(root_config_file)
 
         # Load the variables
         self.variables = self._load_variables(root_configs)
@@ -123,7 +124,7 @@ class ConfigFileLoader:
             for model_config_file in model_architecture_files:
 
                 # Load the config file
-                cfg = self._load_yaml_file(model_config_file)
+                cfg = load_yaml_file(model_config_file)
 
                 # If the config file is non then there was nothing to load so skip it
                 # But we should issue a warning
@@ -167,7 +168,7 @@ class ConfigFileLoader:
             for model_config_file in experiment_templates_import:
 
                 # Load the config file
-                cfg = self._load_yaml_file(model_config_file)
+                cfg = load_yaml_file(model_config_file)
 
                 # Get the templates and add them
                 templates = cfg["experiment_templates"]
@@ -191,7 +192,7 @@ class ConfigFileLoader:
             for model_config_file in experiments_import:
 
                 # Load the config file
-                cfg = self._load_yaml_file(model_config_file)
+                cfg = load_yaml_file(model_config_file)
 
                 # Update the experiments
                 experiments.extend(cfg["experiments"])
@@ -261,7 +262,7 @@ class ConfigFileLoader:
                 
             #     # Load and update
             #     common_experiments_config_file = experiment["common_experiments_config_file"]
-            #     common_experiments_parameters = self._load_yaml_file(common_experiments_config_file)
+            #     common_experiments_parameters = load_yaml_file(common_experiments_config_file)
             #     experiment = self._update_dicts_with_new_dict(common_experiments_parameters, experiment)
 
             #     # Resolve the variable names
@@ -288,26 +289,6 @@ class ConfigFileLoader:
                     # Resolve the variable names
                     experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
 
-            if("dataset_configs_file" in experiment_top_level_configs):
-                dataset_configs_file = experiment_top_level_configs["dataset_configs_file"]
-            elif("dataset_configs_file" in experiment):
-                dataset_configs_file = experiment["dataset_configs_file"]
-            else:
-                dataset_configs_file = None
-            # If we have a dataset params file to load
-            if(dataset_configs_file is not None):
-
-                # Load and update
-                dataset_params = self._load_yaml_file(dataset_configs_file)
-                experiment = self._update_dicts_with_new_dict(experiment, dataset_params)
-
-                print("Loading dataset config file for experiment \"{}\"".format(experiment_name))
-                print("\t{}".format(dataset_configs_file))
-
-                # Resolve the variable names
-                experiment = ConfigFileLoader.resolve_variables(self.variables, experiment)
-
-
             # Finally override with any of the top level configs
             experiment = self._update_dicts_with_new_dict(experiment, experiment_top_level_configs)
 
@@ -319,24 +300,6 @@ class ConfigFileLoader:
 
         return processed_experiments
 
-
-    def _load_yaml_file(self, file_path):
-        '''
-            Load the YAML file into a python dict
-
-            Parameters:
-                file_path: The file path to the YAML file
-
-            Returns:
-                The loaded dictionary
-        '''
-
-        # Read and parse the config file
-        with open(file_path) as file:
-
-            # Load the whole file into a dictionary and return
-            return yaml.load(file, Loader=yaml.FullLoader)
-            
 
     def _update_dicts_with_new_dict(self, target, new_stuff):
         '''
