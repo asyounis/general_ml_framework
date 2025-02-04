@@ -13,13 +13,12 @@ from prettytable import PrettyTable
 
 
 class MetricPrettyPrinter:
-    def __init__(self, logger, save_dir):
+    def __init__(self, logger, save_dir, dataset_name):
 
         # Save for later
         self.logger = logger
         self.save_dir = save_dir
-
-
+        self.dataset_name = dataset_name
 
     def print_metrics(self, metrics):
 
@@ -90,9 +89,18 @@ class MetricPrettyPrinter:
             # Add the row to all the rows
             rows.append(row)
 
+        self.logger.log("\n\n")
+        self.logger.log("==================================================================")
+        self.logger.log("Quantitative Results for dataset \"{}\":".format(self.dataset_name))
+        self.logger.log("==================================================================")
+        self.logger.log("\n")
+
         # Print the data
         self._print_table(rows, unique_metric_labels)
+        self.logger.log("\n")
         self._print_csv(rows, unique_metric_labels)
+        self.logger.log("==================================================================")
+        self.logger.log("\n\n")
 
     def _print_table(self, rows, unique_metric_labels):
 
@@ -105,13 +113,7 @@ class MetricPrettyPrinter:
             table.add_row(row)
 
         # Log it
-        self.logger.log("\n\n")
-        self.logger.log("==================================================================")
-        self.logger.log("Quantitative Results:")
-        self.logger.log("==================================================================")
         self.logger.log(str(table))
-        self.logger.log("\n\n")
-
 
     def _print_csv(self, rows, unique_metric_labels):
 

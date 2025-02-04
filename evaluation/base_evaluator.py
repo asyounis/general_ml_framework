@@ -110,12 +110,6 @@ class BaseEvaluator:
         metric_configs = get_mandatory_config_as_type("metric_configs", self.quantitative_config, "quantitative_config", dict)
         metrics = self._create_metrics(metric_configs, self.metrics_classes)
 
-        # Get the configs
-        batch_sizes = self._get_batch_sizes(self.quantitative_config, self.device)
-
-        # create the dataloaders
-        evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, self.evaluation_dataset, "evaluation")
-
         # put the models into evaluation mode
         for model_name in self.all_models.keys():
 
@@ -124,43 +118,64 @@ class BaseEvaluator:
                 print("Error: Model named \"{}\" returns None".format(model_name))
                 assert(False)
 
-
-
+            # Put it in eval mode
             self.all_models[model_name].eval()
+        # Do it to the overall model too
         self.model.eval()
 
-        # Reset all the metrics
-        for metric_name in metrics.keys():
-            metrics[metric_name].reset()
+        # Get the configs
+        batch_sizes = self._get_batch_sizes(self.quantitative_config, self.device)
 
-        # Run through all the data and compute the outputs
-        t = tqdm(iter(evaluation_loader), leave=False, total=len(evaluation_loader))
-        for step, data in enumerate(t): 
+        # Get the datasets we want to use
+        datasets_to_use = get_mandatory_config("datasets_to_use", self.quantitative_config, "quantitative_config")
+        if(len(datasets_to_use) == 0):
+            return
 
-            # Add that this is an evaluation stage
-            data["stage"] = "evaluation"
+        # Do all the datasets
+        for dataset_to_use in tqdm(datasets_to_use, leave=False, desc="Evaluating on Datasets"):
 
-            # Add in the model control parameters
-            data["model_control_parameters"] = self.model_control_parameters
+            # Create the dataset
+            dataset_config = self.dataset_configs_files_mapping[dataset_to_use]
+            dataset = self.dataset_create_fn(dataset_config, "evaluation")
 
-            # Do the forward pass over the data and get the model output
-            outputs = self.do_forward_pass(data)
+            # create the dataloaders
+            evaluation_loader = self._create_data_loaders(batch_sizes, self.num_cpu_cores_for_dataloader, dataset, "evaluation")
 
-            # Update all the metrics
+
+            # Reset all the metrics
             for metric_name in metrics.keys():
-                metrics[metric_name].add_values(outputs, data)
+                metrics[metric_name].reset()
 
-        # Save the metric data
-        metric_pretty_printer = MetricPrettyPrinter(self.logger, self.quantitative_save_dir)
-        metric_pretty_printer.print_metrics(metrics)
+            # Run through all the data and compute the outputs
+            t = tqdm(iter(evaluation_loader), leave=False, total=len(evaluation_loader))
+            for step, data in enumerate(t): 
 
-        # Aggregate all the metrics so we can save into an object that can be easily parsed later
-        metric_save_data = []
-        for metric_name in metrics.keys():
-            metric_save_data.extend(metrics[metric_name].get_aggregated_result())
+                # Add that this is an evaluation stage
+                data["stage"] = "evaluation"
 
-        # Save
-        torch.save(metric_save_data, "{}/metrics.ptp".format(self.quantitative_save_dir))
+                # Add in the model control parameters
+                data["model_control_parameters"] = self.model_control_parameters
+
+                # Do the forward pass over the data and get the model output
+                outputs = self.do_forward_pass(data)
+
+                # Update all the metrics
+                for metric_name in metrics.keys():
+                    metrics[metric_name].add_values(outputs, data)
+
+            # Save the metric data
+            metric_pretty_printer = MetricPrettyPrinter(self.logger, self.quantitative_save_dir, dataset_to_use)
+            metric_pretty_printer.print_metrics(metrics)
+
+            # Aggregate all the metrics so we can save into an object that can be easily parsed later
+            metric_save_data = []
+            for metric_name in metrics.keys():
+                metric_save_data.extend(metrics[metric_name].get_aggregated_result())
+
+            # Save
+            metric_save_dir = "{}/{}".format(self.quantitative_save_dir, dataset_to_use)
+            ensure_directory_exists(metric_save_dir)
+            torch.save(metric_save_data, "{}/metrics.ptp".format(metric_save_dir))
 
     def do_qualitative_evaluation(self):
         raise NotImplemented
