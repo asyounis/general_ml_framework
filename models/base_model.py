@@ -11,3 +11,7 @@ class BaseModel(nn.Module):
 
     def get_submodels(self):
         raise NotImplemented
+
+    def get_distributed_data_parallel_find_unused_parameters(self):
+        # Return True to be safe
+        return True

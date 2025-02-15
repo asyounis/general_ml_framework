@@ -223,7 +223,7 @@ class ExperimentRunner:
 
         # Wrap it in the DistributedDataParallel
         if(world_size > 1):
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=model.get_distributed_data_parallel_find_unused_parameters())
 
         # Get training type
         training_type = get_mandatory_config("training_type", experiment_configs, "experiment_configs")
