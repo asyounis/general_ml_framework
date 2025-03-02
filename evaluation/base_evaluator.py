@@ -191,7 +191,7 @@ class BaseEvaluator:
         self.do_qualitative_evaluation()
 
 
-    def _create_data_loaders(self, batch_sizes, num_cpu_cores_for_dataloader, dataset, dataset_type):
+    def _create_data_loaders(self, batch_sizes, num_cpu_cores_for_dataloader, dataset, dataset_type, shuffle=False):
 
         if(dataset is None):
             return None
@@ -210,7 +210,7 @@ class BaseEvaluator:
             custom_collate_function = None
 
         # Create the data-loader
-        dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, num_workers=num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=False, collate_fn=custom_collate_function)
+        dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=False, collate_fn=custom_collate_function)
 
         return dataloader
 
