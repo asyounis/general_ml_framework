@@ -33,8 +33,8 @@ class DeviceSelector:
 
             # Make sure we have some GPUs
             if(len(free_gpus) == 0):
-                print("No GPUs available.... Exiting")
-                assert(False)
+                print("No GPUs available....")
+                return None
 
             # Use all of them
             device = free_gpus
@@ -54,9 +54,9 @@ class DeviceSelector:
 
             # Make sure we have enough
             if(num_gpus_needed > len(free_gpus)):
-                print("Not enough available GPUs for request.... Exiting")
+                print("Not enough available GPUs for request....")
                 print("\t Requested {:d} GPUs but only had {:d}".format(num_gpus_needed, free_gpus))
-                assert(False)
+                return None
 
             # Select only the number we need
             device = free_gpus[:num_gpus_needed]
@@ -75,8 +75,8 @@ class DeviceSelector:
 
             # Make sure we have enough
             if(len(free_gpus) == 0):
-                print("Not enough available GPUs for request.... Exiting")
-                assert(False)
+                print("Not enough available GPUs for request....")
+                return None
 
             # Select only the number we need
             device_idx = free_gpus[0]

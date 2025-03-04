@@ -130,6 +130,11 @@ class ExperimentRunner:
         device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
         device = device_selector.get_device(device_configs)
 
+        # No Valid device returned
+        if(device == None):
+            print("No GPUs available.... Exiting")
+            assert(False)
+
         # Get the save directory and make sure that it exists 
         # Note we add the run number to the save dir
         save_dir = get_mandatory_config("save_dir", experiment_configs_copy, "experiment_configs_copy")
