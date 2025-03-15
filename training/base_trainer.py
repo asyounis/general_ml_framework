@@ -676,22 +676,22 @@ class BaseTrainer:
                     weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.Adam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
-                elif(optimizer_to_use == "AdamW"):
+                elif(optimizer_type == "AdamW"):
                     weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.AdamW(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
-                elif(optimizer_to_use == "NAdam"):
+                elif(optimizer_type == "NAdam"):
                     weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.NAdam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
 
-                elif(optimizer_to_use == "RMSProp"):
+                elif(optimizer_type == "RMSProp"):
                     weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
                     eps = get_mandatory_config("eps", optimizer_configs, "optimizer_configs")
                     alpha = get_mandatory_config("alpha", optimizer_configs, "optimizer_configs")
                     optimizer = torch.optim.RMSprop(self.all_models[model_name].parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, eps=eps, alpha=alpha)
 
-                elif(optimizer_to_use == "SGD"):
+                elif(optimizer_type == "SGD"):
                     weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
                     momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
                     dampening = get_mandatory_config("dampening", optimizer_configs, "optimizer_configs")
