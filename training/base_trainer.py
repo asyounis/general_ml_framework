@@ -43,8 +43,8 @@ class BaseTrainer:
         # Extract the mandatory training configs
         self.training_configs = get_mandatory_config("training_configs", experiment_configs, "experiment_configs")
         self.epochs = get_mandatory_config("epochs", self.training_configs, "training_configs")
-        optimizer_configs = get_mandatory_config_as_type("optimizer_configs", self.training_configs, "training_configs", dict)
-        lr_scheduler_configs = get_mandatory_config_as_type("lr_scheduler_configs", self.training_configs, "training_configs", dict)
+        optimizer_configs = get_mandatory_config("optimizer_configs", self.training_configs, "training_configs")
+        lr_scheduler_configs = get_mandatory_config("lr_scheduler_configs", self.training_configs, "training_configs")
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
@@ -292,13 +292,19 @@ class BaseTrainer:
 
         # Do a training step so we can get the compiling out of the way so we can have accurate ETA info
         data = next(training_loader_iter)
-        loss, batch_size = self._do_training_step(0, data)
+        loss, batch_size = self._do_training_step(epoch, 0, data)
         assert(loss is not None)
 
+        # Get the loss as a normal number
+        if(torch.is_tensor(loss)):
+            loss_as_number = loss.detach().cpu().item()
+        else:
+            loss_as_number = loss
+
         # keep track of the average loss
-        total_loss += loss.detach().cpu().item() * batch_size
+        total_loss += loss_as_number * batch_size
         number_of_losses_to_use_for_average_loss += batch_size
-        self.data_plotters["training_iteration_loss"].add_value(loss.detach().cpu().item())
+        self.data_plotters["training_iteration_loss"].add_value(loss_as_number)
 
         # Go through all the data once
         t = distributed_wrap_tqdm(training_loader_iter, leave=False, total=len(self.training_loader)-1, initial=1, desc="Training Epoch")
@@ -311,7 +317,7 @@ class BaseTrainer:
             start_time = time.perf_counter()
 
             # Do a training step
-            loss, batch_size = self._do_training_step(step, data)
+            loss, batch_size = self._do_training_step(epoch, step, data)
             if(loss is None):
                 continue
 
@@ -360,12 +366,19 @@ class BaseTrainer:
                     print("Unknown lr scheduler type \"{}\"".format(str(type(lr_scheduler))))
                     assert(False)
 
+
+            # Get the loss as a normal number
+            if(torch.is_tensor(loss)):
+                loss_as_number = loss.detach().cpu().item()
+            else:
+                loss_as_number = loss
+
             # keep track of the average loss
-            total_loss += loss.detach().cpu().item() * batch_size
+            total_loss += loss_as_number * batch_size
             number_of_losses_to_use_for_average_loss += batch_size
 
             # Add the loss for the batch so we can do step losses
-            self.data_plotters["training_iteration_loss"].add_value(loss.cpu().item())
+            self.data_plotters["training_iteration_loss"].add_value(loss_as_number)
 
             # Do any project specific actions 
             self.project_specific_end_of_training_batch_fn(epoch, step_tmp)
@@ -379,10 +392,13 @@ class BaseTrainer:
         return average_loss, average_time
 
 
-    def _do_training_step(self, step, data):
+    def _do_training_step(self, epoch, step, data):
         
         # Add that this is a training stage
         data["stage"] = "training"
+
+        # Add in the epoch. This is useful for custom trainers
+        data["epoch"] = epoch
 
         # Add in the model control parameters
         data["model_control_parameters"] = self.model_control_parameters
@@ -468,6 +484,9 @@ class BaseTrainer:
                 # Add that this is a training stage
                 data["stage"] = "validation"
 
+                # Add in the epoch. This is useful for custom trainers
+                data["epoch"] = epoch
+
                 # Add in the model control parameters
                 data["model_control_parameters"] = self.model_control_parameters
 
@@ -500,12 +519,18 @@ class BaseTrainer:
                     total_time_taken_seconds += float(end_time - start_time)
                     number_of_losses_to_use_for_average_time += 1
 
+                # Get the loss as a normal number
+                if(torch.is_tensor(loss)):
+                    loss_as_number = loss.detach().cpu().item()
+                else:
+                    loss_as_number = loss
+
                 # keep track of the average loss
-                total_loss += loss.detach().cpu().item() * batch_size
+                total_loss += loss_as_number * batch_size
                 number_of_losses_to_use_for_average_loss += batch_size
 
                 # Add the loss for the batch so we can do step losses
-                self.data_plotters["validation_iteration_loss"].add_value(loss.cpu().item())
+                self.data_plotters["validation_iteration_loss"].add_value(loss_as_number)
 
             # Compute the average loss
             average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
@@ -554,6 +579,7 @@ class BaseTrainer:
         # return them
         return training_dataset, validation_dataset
 
+
     def _create_data_loaders(self, batch_sizes, dataset, dataset_type):
 
         if(dataset is None):
@@ -598,6 +624,10 @@ class BaseTrainer:
 
 
     def _create_optimizers(self, optimizer_configs, learning_rates):
+
+        # No optimizer settings so no optimizers
+        if(optimizer_configs == "Disabled"):
+            return dict()
 
         # All the optimizers we create
         all_optimizers = dict()
@@ -719,6 +749,10 @@ class BaseTrainer:
 
 
     def _create_lr_schedulers(self, optimizers, lr_scheduler_configs):
+
+        # If we have no settings then there is nothing to do
+        if(lr_scheduler_configs == "Disabled"):
+            return dict()
 
         lr_schedulers = dict()
 
