@@ -97,8 +97,8 @@ class MetricPrettyPrinter:
 
         # Print the data
         self._print_table(rows, unique_metric_labels)
-        self.logger.log("\n")
-        self._print_csv(rows, unique_metric_labels)
+        # self.logger.log("\n")
+        # self._print_csv(rows, unique_metric_labels)
         self.logger.log("==================================================================")
         self.logger.log("\n\n")
 
@@ -115,21 +115,21 @@ class MetricPrettyPrinter:
         # Log it
         self.logger.log(str(table))
 
-    def _print_csv(self, rows, unique_metric_labels):
+    # def _print_csv(self, rows, unique_metric_labels):
 
-        # Create the header
-        header = ["metric"] + unique_metric_labels
+    #     # Create the header
+    #     header = ["metric"] + unique_metric_labels
 
-        # Save to the file 
-        csv_output_file = "{}/metrics.csv".format(self.save_dir)
-        with open(csv_output_file, 'w') as f:
+    #     # Save to the file 
+    #     csv_output_file = "{}/metrics.csv".format(self.save_dir)
+    #     with open(csv_output_file, 'w') as f:
 
-            # Create the CSV write
-            writer = csv.writer(f)
+    #         # Create the CSV write
+    #         writer = csv.writer(f)
 
-            # write the header
-            writer.writerow(header)
+    #         # write the header
+    #         writer.writerow(header)
 
-            # write all the rows
-            writer.writerows(rows)
+    #         # write all the rows
+    #         writer.writerows(rows)
 

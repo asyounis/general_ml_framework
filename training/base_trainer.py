@@ -46,6 +46,7 @@ class BaseTrainer:
         optimizer_configs = get_mandatory_config("optimizer_configs", self.training_configs, "training_configs")
         lr_scheduler_configs = get_mandatory_config("lr_scheduler_configs", self.training_configs, "training_configs")
         learning_rates = get_mandatory_config_as_type("learning_rates", self.training_configs, "training_configs", dict)
+        optimizer_model_mappings = get_mandatory_config_as_type("optimizer_model_mappings", self.training_configs, "training_configs", dict)
         early_stopping_configs = get_mandatory_config_as_type("early_stopping_configs", self.training_configs, "training_configs", dict)
 
         # Extract the batch size information
@@ -101,7 +102,7 @@ class BaseTrainer:
             self.all_models["full_model"] = self.model
 
         # Create the optimizer
-        self.optimizers = self._create_optimizers(optimizer_configs, learning_rates)
+        self.optimizers = self._create_optimizers(optimizer_configs, learning_rates, optimizer_model_mappings)
 
         # Create the learning rate schedulers
         self.lr_schedulers = self._create_lr_schedulers(self.optimizers, lr_scheduler_configs)
@@ -397,8 +398,9 @@ class BaseTrainer:
         # Add that this is a training stage
         data["stage"] = "training"
 
-        # Add in the epoch. This is useful for custom trainers
+        # Add in the epoch and step. This is useful for custom trainers
         data["epoch"] = epoch
+        data["step"] = step
 
         # Add in the model control parameters
         data["model_control_parameters"] = self.model_control_parameters
@@ -623,11 +625,65 @@ class BaseTrainer:
         return dataloader
 
 
-    def _create_optimizers(self, optimizer_configs, learning_rates):
+    def _create_optimizers(self, optimizer_configs, learning_rates, optimizer_model_mappings):
 
         # No optimizer settings so no optimizers
-        if(optimizer_configs == "Disabled"):
+        if(len(optimizer_configs.keys())== 0):
+            
+            # Make sure we dont have any mappings or learning rates
+            assert(len(optimizer_model_mappings) == 0)
+            assert(len(learning_rates) == 0)
             return dict()
+
+
+
+        # Load the optimizers
+        optimizer_classes = dict()
+        for optimizer_name in optimizer_configs.keys():
+
+            # Get the optimizer configs
+            optimizer_cfg = optimizer_configs[optimizer_name]
+
+            # Get the type so we can get the exact parameters we need
+            optimizer_type = get_mandatory_config("type", optimizer_cfg, "optimizer_cfg")
+
+            # The kwargs we will be passing into the optimizer 
+            optimizer_kwargs = dict()
+
+            # The class object we will use for the optimizer
+            optimizer_cls = None
+
+            if(optimizer_type == "Adam"):
+                optimizer_kwargs["weight_decay"] = get_mandatory_config("weight_decay", optimizer_cfg, "optimizer_cfg")
+                optimizer_cls = torch.optim.Adam
+
+            elif(optimizer_type == "AdamW"):
+                optimizer_kwargs["weight_decay"] = get_mandatory_config("weight_decay", optimizer_cfg, "optimizer_cfg")
+                optimizer_cls = torch.optim.AdamW
+
+            elif(optimizer_type == "NAdam"):
+                optimizer_kwargs["weight_decay"] = get_mandatory_config("weight_decay", optimizer_cfg, "optimizer_cfg")
+                optimizer_cls = torch.optim.NAdam
+
+            elif(optimizer_type == "RMSProp"):
+                optimizer_kwargs["weight_decay"] = get_mandatory_config("weight_decay", optimizer_cfg, "optimizer_cfg")
+                optimizer_kwargs["momentum"] = get_mandatory_config("momentum", optimizer_cfg, "optimizer_cfg")
+                optimizer_kwargs["eps"] = get_mandatory_config("eps", optimizer_cfg, "optimizer_cfg")
+                optimizer_kwargs["alpha"] = get_mandatory_config("alpha", optimizer_cfg, "optimizer_cfg")
+                optimizer_cls = torch.optim.RMSprop
+
+            elif(optimizer_type == "SGD"):
+                optimizer_kwargs["weight_decay"] = get_mandatory_config("weight_decay", optimizer_cfg, "optimizer_cfg")
+                optimizer_kwargs["momentum"] = get_mandatory_config("momentum", optimizer_cfg, "optimizer_cfg")
+                optimizer_kwargs["dampening"] = get_mandatory_config("dampening", optimizer_cfg, "optimizer_cfg")
+                optimizer_cls = torch.optim.SGD
+
+            else:
+                print("Unknown optimizer type \"{}\"".format(optimizer_type))
+                exit()
+
+            # Save this optimizer stuff 
+            optimizer_classes[optimizer_name] = (optimizer_cls, optimizer_kwargs)
 
         # All the optimizers we create
         all_optimizers = dict()
@@ -651,7 +707,7 @@ class BaseTrainer:
 
         # Pack into a pretty table
         table = PrettyTable()
-        table.field_names = ["Model Name", "Learning Rate"]
+        table.field_names = ["Model Name", "Learning Rate", "Mapped Optimizer"]
 
 
         # for each model make an optimizer
@@ -669,27 +725,28 @@ class BaseTrainer:
             if(isinstance(lr, str)):
                 lr = lr.lower()
 
-            # Add a row to the table
-            if(isinstance(lr, str)):
-                table.add_row([model_name, lr])
-            else:
-                table.add_row([model_name, "{:05f}".format(lr)])
-
-
             # Make sure that if we have a string that it is "freeze" and not some other string 
             if(isinstance(lr, str)):
                 assert(lr == "freeze")
 
+            # Make sure we have an optimizer mapping and get it
+            assert(model_name in optimizer_model_mappings)
+            optimizer_name_to_use = optimizer_model_mappings[model_name]
+
+            # Make sure this is a valid mapping and get it
+            assert(optimizer_name_to_use in optimizer_classes)
+            optimizer_cls, optimizer_kwargs = optimizer_classes[optimizer_name_to_use]
+
+            # Add a row to the table
+            if(isinstance(lr, str)):
+                table.add_row([model_name, lr, optimizer_name_to_use])
+            else:
+                table.add_row([model_name, "{:05f}".format(lr), optimizer_name_to_use])
+
             # If the learning rate is frozen then no optimizer is needed
             if(lr == "freeze"):
-
-                # # If the learning rate is frozen then we want to mark the params as not needing a gradient 
-                # # and also mark them as being in eval mode so that things like batchnorm are also frozen
-                # for params in model.parameters():
-                #     params.requires_grad = False
-                # self.all_models[model_name].eval()
+                # Nothing to do here since we are frozen so move on
                 pass
-
             else:
 
                 # Get the model parameters
@@ -700,40 +757,8 @@ class BaseTrainer:
                     self.logger.log("WARNING: learning rate for model name \"{}\" was specified but model has no learnable parameters... Skipping...".format(model_name))
                     continue
 
-                # Create the optimizer based on the type
-                optimizer_type = get_mandatory_config("type", optimizer_configs, "optimizer_configs")
-                if(optimizer_type == "Adam"):
-                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
-                    optimizer = torch.optim.Adam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
-
-                elif(optimizer_type == "AdamW"):
-                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
-                    optimizer = torch.optim.AdamW(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
-
-                elif(optimizer_type == "NAdam"):
-                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
-                    optimizer = torch.optim.NAdam(self.all_models[model_name].parameters(),lr=lr, weight_decay=weight_decay)
-
-                elif(optimizer_type == "RMSProp"):
-                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
-                    momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
-                    eps = get_mandatory_config("eps", optimizer_configs, "optimizer_configs")
-                    alpha = get_mandatory_config("alpha", optimizer_configs, "optimizer_configs")
-                    optimizer = torch.optim.RMSprop(self.all_models[model_name].parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, eps=eps, alpha=alpha)
-
-                elif(optimizer_type == "SGD"):
-                    weight_decay = get_mandatory_config("weight_decay", optimizer_configs, "optimizer_configs")
-                    momentum = get_mandatory_config("momentum", optimizer_configs, "optimizer_configs")
-                    dampening = get_mandatory_config("dampening", optimizer_configs, "optimizer_configs")
-                    optimizer = torch.optim.SGD(self.all_models[model_name].parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, dampening=dampening)
-
-                else:
-                    print("Unknown optimizer type \"{}\"".format(optimizer_type))
-                    exit()
-
-                all_optimizers[model_name] = optimizer
-
-
+                # Create the optimizer
+                all_optimizers[model_name] = optimizer_cls(self.all_models[model_name].parameters(),lr=lr, **optimizer_kwargs)
 
         # Add indent to the table and print it
         table_str = str(table)
@@ -741,7 +766,7 @@ class BaseTrainer:
         table_str = ["\t{}".format(ts) for ts in table_str]
         table_str = "\n".join(table_str)
         self.logger.log("\n")
-        self.logger.log("Learning Rate Info:")
+        self.logger.log("Learning Rate/Optimizer Info:")
         self.logger.log(table_str)
         self.logger.log("\n")
 
