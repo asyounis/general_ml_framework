@@ -35,6 +35,7 @@ class ExperimentRunner:
         self.number_of_runs = args.number_of_runs
         self.run_numbers = args.run_numbers
         self.load_from_checkpoint = args.load_from_checkpoint
+        self.device_to_use_override = args.device_to_use_override
 
         # Load the config File
         config_file_loader = ConfigFileLoader(config_file)
@@ -127,8 +128,16 @@ class ExperimentRunner:
 
         # Select the device to run on
         gpu_info_str = device_selector.get_gpu_info_str(indent="\t")
-        device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
-        device = device_selector.get_device(device_configs)
+        if(self.device_to_use_override is None):
+
+            # User did not override the device we should use
+            device_configs = get_mandatory_config("device_configs", experiment_configs_copy, "experiment_configs_copy")
+            device = device_selector.get_device(device_configs)
+        else:
+
+            # User is overriding so blind hope they know what they are doing
+            device = self.device_to_use_override
+
 
         # No Valid device returned
         if(device == None):
@@ -375,6 +384,9 @@ class ExperimentRunner:
 
         # We need an optional load from checkpoint
         parser.add_argument("-l", "--load_from_checkpoint", dest="load_from_checkpoint", help="Override if we should load from checkpoint or not", required=False, type=bool, default=None)
+
+        # We need an optional number of runs
+        parser.add_argument("-d", "--device_to_use_override", dest="device_to_use_override", help="Specify the Device to use (cuda:0, cpu, ext) and override any device configs in the config yamls", required=False, default=None)
 
         # Parse!!
         args = parser.parse_args()
