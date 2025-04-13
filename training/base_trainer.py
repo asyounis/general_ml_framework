@@ -628,7 +628,7 @@ class BaseTrainer:
     def _create_optimizers(self, optimizer_configs, learning_rates, optimizer_model_mappings):
 
         # No optimizer settings so no optimizers
-        if(len(optimizer_configs.keys())== 0):
+        if(len(optimizer_configs.keys()) == 0):
             
             # Make sure we dont have any mappings or learning rates
             assert(len(optimizer_model_mappings) == 0)
