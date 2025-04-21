@@ -101,8 +101,19 @@ class BaseTrainer:
             self.all_models = self.model.get_submodels()
             self.all_models["full_model"] = self.model
 
+        # See if there are models that we can disable gradients for and make sure that none of the models in here are
+        # set to learn (aka has an optimizer).
+        # Also this is dangerous since we cant verify if we need the gradients for this model
+        # so assume that the user knows what they are doing
+        self.models_with_disabled_gradients = get_optional_config_with_default("models_with_disabled_gradients", self.training_configs, "training_configs", default_value=[])
+        self.models_with_disabled_gradients = set(self.models_with_disabled_gradients)
+        if(len(self.models_with_disabled_gradients) != 0):
+
+            # Risky so tell the user
+            logger.log_warning("Disabling Gradients computation for certain models!!  Make sure you know what you are doing!!!")
+
         # Create the optimizer
-        self.optimizers = self._create_optimizers(optimizer_configs, learning_rates, optimizer_model_mappings)
+        self.optimizers = self._create_optimizers(optimizer_configs, learning_rates, optimizer_model_mappings, self.models_with_disabled_gradients)
 
         # Create the learning rate schedulers
         self.lr_schedulers = self._create_lr_schedulers(self.optimizers, lr_scheduler_configs)
@@ -112,26 +123,6 @@ class BaseTrainer:
 
         # Create the data plotters
         self.data_plotters = self._create_data_plotters(self.data_plotter_plot_modulo)
-
-        # See if there are models that we can disable gradients for and make sure that none of the models in here are
-        # set to learn (aka has an optimizer).
-        # Also this is dangerous since we cant verify if we need the gradients for this model
-        # so assume that the user knows what they are doing
-        self.models_with_disabled_gradients = get_optional_config_with_default("models_with_disabled_gradients", self.training_configs, "training_configs", default_value=[])
-        if(len(self.models_with_disabled_gradients) != 0):
-            
-            # Risky so tell the user
-            logger.log_warning("Disabling Gradients computation for certain models!!  Make sure you know what you are doing!!!")
-
-            # Make sure none of the models are set to train
-            for model_name in self.models_with_disabled_gradients:
-                if(model_name in self.optimizers):
-                    logger.log_error("Model set to turn off gradient has optimizer: \"{}\"".format(model_name))
-                    assert(False)
-
-            # Convert to a set for faster lookup
-            self.models_with_disabled_gradients = set(self.models_with_disabled_gradients)
-
 
         # Keep track of the time averages
         self.timing_data = dict()
@@ -625,7 +616,7 @@ class BaseTrainer:
         return dataloader
 
 
-    def _create_optimizers(self, optimizer_configs, learning_rates, optimizer_model_mappings):
+    def _create_optimizers(self, optimizer_configs, learning_rates, optimizer_model_mappings, models_with_disabled_gradients):
 
         # No optimizer settings so no optimizers
         if(len(optimizer_configs.keys()) == 0):
@@ -707,8 +698,7 @@ class BaseTrainer:
 
         # Pack into a pretty table
         table = PrettyTable()
-        table.field_names = ["Model Name", "Learning Rate", "Mapped Optimizer"]
-
+        table.field_names = ["Model Name", "Learning Rate", "Mapped Optimizer", "Gradient Computation"]
 
         # for each model make an optimizer
         for model_name in learning_rates.keys():
@@ -737,17 +727,31 @@ class BaseTrainer:
             assert(optimizer_name_to_use in optimizer_classes)
             optimizer_cls, optimizer_kwargs = optimizer_classes[optimizer_name_to_use]
 
+            # Check if the model has gradients disabled
+            model_has_disabled_gradients = model_name in models_with_disabled_gradients
+
+            # Create the label for the table
+            if(model_has_disabled_gradients):
+                model_has_disabled_gradients_label = "DISABLED!!"
+            else:
+                model_has_disabled_gradients_label = "Enabled"
+
             # Add a row to the table
             if(isinstance(lr, str)):
-                table.add_row([model_name, lr, optimizer_name_to_use])
+                table.add_row([model_name, lr, optimizer_name_to_use, model_has_disabled_gradients_label])
             else:
-                table.add_row([model_name, "{:05f}".format(lr), optimizer_name_to_use])
+                table.add_row([model_name, "{:05f}".format(lr), optimizer_name_to_use, model_has_disabled_gradients_label])
 
             # If the learning rate is frozen then no optimizer is needed
             if(lr == "freeze"):
                 # Nothing to do here since we are frozen so move on
                 pass
             else:
+
+                # Make sure none of the models are set to train
+                if(model_has_disabled_gradients):
+                    logger.log_error("Model set to turn off gradient has optimizer: \"{}\"".format(model_name))
+                    assert(False)
 
                 # Get the model parameters
                 model_parameters = self.all_models[model_name].parameters()
