@@ -72,6 +72,7 @@ class BaseTrainer:
         self.logger.log("")
         self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
         self.logger.log("Doing checkpointing while training: {}".format(self.do_checkpointing))
+        self.logger.log("Gradient Clip Value: {}".format(str(self.gradient_clip_value)))
         self.logger.log("")
 
         # Get the optional extra "model control" parameters, these parameters are passed into the model when the model us run
@@ -445,6 +446,32 @@ class BaseTrainer:
         # if we have a gradient clipping value then do the clipping
         if(self.gradient_clip_value is not None):
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_value)
+
+            # Compute the gradient norm for the models and add it to the data plotters
+            if(self.distributed_is_master):
+                for model_name in self.all_models.keys():
+
+                    # See if this model even has any parameters before we compute gradient norms
+                    if(len(list(self.all_models[model_name].parameters())) != 0):
+
+                        # We want L2 Norm
+                        norm_type = 2
+
+                        # Compute the gradient norm
+                        norm = [torch.norm(p.grad.detach(), norm_type) for p in self.all_models[model_name].parameters() if p.grad is not None]
+
+                        # if there is no norm then we cant compute the norm
+                        if(len(norm) != 0):
+
+                            # Finish computing the norm 
+                            gradient_norm = torch.norm(torch.stack(norm) , norm_type)
+
+                            # Add it to the data plotter
+                            data_plotter_name = "post_clip_gradient_norm_{}".format(model_name)
+                            self.data_plotters[data_plotter_name].add_value(gradient_norm.cpu().item())
+
+
+
 
         # Take an optimization step
         for optimizer in self.optimizers.values():
@@ -857,6 +884,13 @@ class BaseTrainer:
         for model_name in self.all_models.keys():
             data_plotter_name = "gradient_norm_{}".format(model_name)
             all_data_plotters[data_plotter_name] = dataplotter_cls("Gradient L2 Norm for {} (Pre Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
+
+
+        # Create the gradient norm data plotters
+        gradient_norm_plot_save_dir = "{}/gradient_norms_post_clipping/".format(self.save_dir)
+        for model_name in self.all_models.keys():
+            data_plotter_name = "post_clip_gradient_norm_{}".format(model_name)
+            all_data_plotters[data_plotter_name] = dataplotter_cls("Gradient L2 Norm for {} (Post Clipping)".format(model_name), "Iteration", "Gradient L2 Norm", gradient_norm_plot_save_dir, "{}.png".format(data_plotter_name), plot_modulo=data_plotter_plot_modulo)
 
         # Get the project specific data plotters
         project_specific_dataplotters = self.create_project_specific_dataplotters(dataplotter_cls, data_plotter_plot_modulo)
