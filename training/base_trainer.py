@@ -791,6 +791,16 @@ class BaseTrainer:
                 # Create the optimizer
                 all_optimizers[model_name] = optimizer_cls(self.all_models[model_name].parameters(),lr=lr, **optimizer_kwargs)
 
+
+        # Check that all models have an LR otherwise notify the developer
+        for model_name in self.all_models:
+
+            # Make sure the model exists
+            if(model_name not in learning_rates):
+                self.logger.log("WARNING: Model name \"{}\" does not have a learning rate... Skipping...".format(model_name))
+                continue
+
+
         # Add indent to the table and print it
         table_str = str(table)
         table_str = table_str.split("\n")
