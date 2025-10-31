@@ -5,6 +5,7 @@ import sys
 import re
 import time
 import gc
+import os
 
 # Package Imports
 import yaml
@@ -61,7 +62,19 @@ class BaseTrainer:
         validation_dataset_name = get_mandatory_config("validation_dataset_name", dataset_usage_configs, "dataset_usage_configs")
 
         # Extract the optional configs
-        self.num_cpu_cores_for_dataloader = get_optional_config_with_default("num_cpu_cores_for_dataloader", self.training_configs, "training_configs", default_value=4)
+        self.num_cpu_cores_for_dataloader, self.total_configured_dataloader_workers = self._resolve_dataloader_workers()
+        self.dataloader_pin_memory = get_optional_config_with_default(
+            "pin_memory_for_dataloader",
+            self.training_configs,
+            "training_configs",
+            default_value=True,
+        )
+        self.dataloader_multiprocessing_context = get_optional_config_with_default(
+            "dataloader_multiprocessing_context",
+            self.training_configs,
+            "training_configs",
+            default_value=None,
+        )
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
         self.do_checkpointing = get_optional_config_with_default("do_checkpointing", self.training_configs, "training_configs", default_value=True)
@@ -70,7 +83,20 @@ class BaseTrainer:
 
         # Log so we have a record
         self.logger.log("")
-        self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
+        if self.distributed_world_size > 1:
+            rank_display = self.distributed_rank if self.distributed_rank is not None else 0
+            self.logger.log(
+                "Number of CPU cores to use for dataloader (rank {:d}/{:d}): {:d} (total configured: {:d})".format(
+                    rank_display,
+                    self.distributed_world_size,
+                    self.num_cpu_cores_for_dataloader,
+                    self.total_configured_dataloader_workers,
+                )
+            )
+        else:
+            self.logger.log("Number of CPU cores to use for dataloader: {:d}".format(self.num_cpu_cores_for_dataloader))
+        self.logger.log(f"Dataloader pin_memory enabled: {self.dataloader_pin_memory}")
+        self.logger.log(f"Dataloader multiprocessing context: {self.dataloader_multiprocessing_context}")
         self.logger.log("Doing checkpointing while training: {}".format(self.do_checkpointing))
         self.logger.log("Gradient Clip Value: {}".format(str(self.gradient_clip_value)))
         self.logger.log("")
@@ -142,6 +168,60 @@ class BaseTrainer:
         # Create the model saver
         if(self.distributed_is_master):
             self.model_saver = ModelSaverLoader(self.all_models, self.save_dir, self.logger)
+
+    @staticmethod
+    def _get_available_cpu_count():
+        """
+        Determine the number of CPUs available to this process, respecting cgroup/SLURM
+        limits when possible.
+        """
+        try:
+            # On Linux this reflects cgroup and affinity limits, which SLURM sets.
+            return len(os.sched_getaffinity(0))
+        except AttributeError:
+            pass
+
+        for env_var in ("SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE", "OMP_NUM_THREADS"):
+            value = os.environ.get(env_var)
+            if value is not None:
+                try:
+                    parsed = int(value)
+                except ValueError:
+                    continue
+                if parsed > 0:
+                    return parsed
+
+        return os.cpu_count() or 1
+
+    def _resolve_dataloader_workers(self):
+        """
+        Determine how many dataloader workers to use based on configuration,
+        respecting auto-scaling when set to -1.
+        """
+        configured_workers = get_optional_config_with_default(
+            "num_cpu_cores_for_dataloader",
+            self.training_configs,
+            "training_configs",
+            default_value=4,
+        )
+
+        world_size = self.distributed_world_size if self.distributed_world_size else 1
+        rank = self.distributed_rank if self.distributed_rank is not None else 0
+
+        if configured_workers == -1:
+            available_cpus = self._get_available_cpu_count()
+            total_workers = max(available_cpus - 1, 0)
+        else:
+            total_workers = max(int(configured_workers), 0)
+
+        if world_size <= 1:
+            return total_workers, total_workers
+
+        base = total_workers // world_size
+        remainder = total_workers % world_size
+        per_rank = base + (1 if rank < remainder else 0)
+
+        return per_rank, total_workers
 
     def train(self):
 
@@ -624,6 +704,11 @@ class BaseTrainer:
         else:
             shuffle_data = False
 
+        persistent_workers = self.num_cpu_cores_for_dataloader > 0
+        dataloader_kwargs = {}
+        if self.dataloader_multiprocessing_context is not None:
+            dataloader_kwargs["multiprocessing_context"] = self.dataloader_multiprocessing_context
+
         if(self.is_using_distributed):
 
             # If we are using distributed then we need to specify a sampler
@@ -634,11 +719,29 @@ class BaseTrainer:
             batch_size = batch_size // self.distributed_world_size
 
             # Create the data-loader
-            dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function, sampler=sampler)
+            dataloader = torch.utils.data.DataLoader(
+                dataset=dataset,
+                batch_size=batch_size,
+                num_workers=self.num_cpu_cores_for_dataloader,
+                pin_memory=self.dataloader_pin_memory,
+                persistent_workers=persistent_workers,
+                collate_fn=custom_collate_function,
+                sampler=sampler,
+                **dataloader_kwargs,
+            )
 
         else:
             # Create the data-loader
-            dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle_data, num_workers=self.num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=True, collate_fn=custom_collate_function)
+            dataloader = torch.utils.data.DataLoader(
+                dataset=dataset,
+                batch_size=batch_size,
+                shuffle=shuffle_data,
+                num_workers=self.num_cpu_cores_for_dataloader,
+                pin_memory=self.dataloader_pin_memory,
+                persistent_workers=persistent_workers,
+                collate_fn=custom_collate_function,
+                **dataloader_kwargs,
+            )
 
         return dataloader
 
