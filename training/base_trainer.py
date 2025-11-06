@@ -67,7 +67,7 @@ class BaseTrainer:
             "pin_memory_for_dataloader",
             self.training_configs,
             "training_configs",
-            default_value=True,
+            default_value=False,
         )
         self.dataloader_multiprocessing_context = get_optional_config_with_default(
             "dataloader_multiprocessing_context",
@@ -310,8 +310,13 @@ class BaseTrainer:
             if(self.do_checkpointing and self.distributed_is_master):
                 self._create_checkpoint(epoch)
 
-            # Determine if we should early stop
-            if(self.early_stopping.do_stop()):
+            # Determine if we should early stop (all ranks must agree)
+            should_stop = self.early_stopping.do_stop()
+            if self.is_using_distributed and torch.distributed.is_initialized():
+                should_stop_tensor = torch.tensor([1 if should_stop else 0], device=self.device, dtype=torch.int32)
+                torch.distributed.all_reduce(should_stop_tensor, op=torch.distributed.ReduceOp.MAX)
+                should_stop = bool(should_stop_tensor.item())
+            if(should_stop):
                 break
 
 
@@ -633,6 +638,23 @@ class BaseTrainer:
                 self.data_plotters["validation_iteration_loss"].add_value(loss_as_number)
 
             # Compute the average loss
+            if self.is_using_distributed and torch.distributed.is_initialized():
+                metrics_tensor = torch.tensor(
+                    [
+                        total_loss,
+                        number_of_losses_to_use_for_average_loss,
+                        total_time_taken_seconds,
+                        number_of_losses_to_use_for_average_time,
+                    ],
+                    dtype=torch.float64,
+                    device=self.device,
+                )
+                torch.distributed.all_reduce(metrics_tensor, op=torch.distributed.ReduceOp.SUM)
+                total_loss = metrics_tensor[0].item()
+                number_of_losses_to_use_for_average_loss = int(metrics_tensor[1].item())
+                total_time_taken_seconds = metrics_tensor[2].item()
+                number_of_losses_to_use_for_average_time = int(metrics_tensor[3].item())
+
             average_loss = float(total_loss) / float(number_of_losses_to_use_for_average_loss)
 
             # Compute the average time

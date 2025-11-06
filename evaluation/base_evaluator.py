@@ -210,7 +210,15 @@ class BaseEvaluator:
             custom_collate_function = None
 
         # Create the data-loader
-        dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_cpu_cores_for_dataloader, pin_memory=True, persistent_workers=False, collate_fn=custom_collate_function)
+        dataloader = torch.utils.data.DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_cpu_cores_for_dataloader,
+            pin_memory=False,
+            persistent_workers=False,
+            collate_fn=custom_collate_function,
+        )
 
         return dataloader
 
