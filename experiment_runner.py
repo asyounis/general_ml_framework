@@ -7,6 +7,7 @@ import argparse
 import time 
 import gc
 import datetime
+import os
 
 
 # Package Imports
@@ -213,6 +214,7 @@ class ExperimentRunner:
 
     def _run_training_helper(self, rank, world_size, master_port, experiment_name, experiment_configs, save_dir, devices):
 
+
         if(world_size > 1):
             distributed_setup(rank, world_size, master_port)
 
@@ -232,12 +234,34 @@ class ExperimentRunner:
         else:
             device = devices
 
+        # Normalize device handling (int -> torch.device) and make sure each process
+        # sets its CUDA device explicitly before constructing DDP.
+        if torch.cuda.is_available():
+            if isinstance(device, torch.device):
+                if device.type != "cuda":
+                    raise ValueError("Distributed training requires CUDA devices.")
+                torch.cuda.set_device(device)
+                torch_device = device
+            else:
+                torch_device = torch.device("cuda", device)
+                torch.cuda.set_device(torch_device)
+        else:
+            torch_device = torch.device("cpu")
+
         # Move the model to the correct device
-        model = model.to(device)
+        model = model.to(torch_device)
+
 
         # Wrap it in the DistributedDataParallel
         if(world_size > 1):
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], find_unused_parameters=model.get_distributed_data_parallel_find_unused_parameters())
+            ddp_kwargs = {}
+            if torch_device.type == "cuda":
+                ddp_kwargs["device_ids"] = [torch_device.index]
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                find_unused_parameters=model.get_distributed_data_parallel_find_unused_parameters(),
+                **ddp_kwargs,
+            )
 
         # Get training type
         training_type = get_mandatory_config("training_type", experiment_configs, "experiment_configs")
@@ -284,6 +308,7 @@ class ExperimentRunner:
         # Get a random unsused port for all the comms to go through
         master_port = distributed_get_open_port()
         logger.log("Distributed Master Port: {}".format(master_port))
+
 
 
         if(world_size > 1):
@@ -428,4 +453,3 @@ class ExperimentRunner:
         logger.log("Model Stats:")
         logger.log(table_str)
         logger.log("\n")
-

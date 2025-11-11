@@ -75,6 +75,12 @@ class BaseTrainer:
             "training_configs",
             default_value=None,
         )
+        self.drop_last_training_batches = get_optional_config_with_default(
+            "drop_last_training_batches",
+            self.training_configs,
+            "training_configs",
+            default_value=False,
+        )
         self.gradient_clip_value = get_optional_config_with_default("gradient_clip_value", self.training_configs, "training_configs", default_value=None)
         config_load_from_checkpoint = get_optional_config_with_default("load_from_checkpoint", self.training_configs, "training_configs", default_value=False)
         self.do_checkpointing = get_optional_config_with_default("do_checkpointing", self.training_configs, "training_configs", default_value=True)
@@ -723,8 +729,10 @@ class BaseTrainer:
         # Check if we should shuffle the data
         if(dataset_type == "training"):
             shuffle_data = True
+            drop_last = self.drop_last_training_batches
         else:
             shuffle_data = False
+            drop_last = False
 
         persistent_workers = self.num_cpu_cores_for_dataloader > 0
         dataloader_kwargs = {}
@@ -734,7 +742,7 @@ class BaseTrainer:
         if(self.is_using_distributed):
 
             # If we are using distributed then we need to specify a sampler
-            sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=self.distributed_world_size, rank=self.distributed_rank, shuffle=shuffle_data, drop_last=False)
+            sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=self.distributed_world_size, rank=self.distributed_rank, shuffle=shuffle_data, drop_last=drop_last)
                 
             # The batch size has to be per GPU so we
             assert((batch_size % self.distributed_world_size) == 0)
@@ -749,6 +757,7 @@ class BaseTrainer:
                 persistent_workers=persistent_workers,
                 collate_fn=custom_collate_function,
                 sampler=sampler,
+                drop_last=drop_last,
                 **dataloader_kwargs,
             )
 
@@ -762,6 +771,7 @@ class BaseTrainer:
                 pin_memory=self.dataloader_pin_memory,
                 persistent_workers=persistent_workers,
                 collate_fn=custom_collate_function,
+                drop_last=drop_last,
                 **dataloader_kwargs,
             )
 
