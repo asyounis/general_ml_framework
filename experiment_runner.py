@@ -234,22 +234,36 @@ class ExperimentRunner:
         else:
             device = devices
 
-        # Normalize device handling (int -> torch.device) and make sure each process
+        # Normalize device handling (int/str -> torch.device) and make sure each process
         # sets its CUDA device explicitly before constructing DDP.
-        if torch.cuda.is_available():
-            if isinstance(device, torch.device):
-                if device.type != "cuda":
-                    raise ValueError("Distributed training requires CUDA devices.")
-                torch.cuda.set_device(device)
-                torch_device = device
-            else:
-                torch_device = torch.device("cuda", device)
-                torch.cuda.set_device(torch_device)
+        def _as_torch_device(spec):
+            if isinstance(spec, torch.device):
+                return spec
+            if isinstance(spec, int):
+                return torch.device("cuda", spec)
+            if isinstance(spec, str):
+                normalized = spec.strip()
+                if normalized.lower() == "cpu":
+                    return torch.device("cpu")
+                if normalized.isdigit():
+                    return torch.device("cuda", int(normalized))
+                if normalized.startswith("cuda"):
+                    return torch.device(normalized)
+                raise ValueError(f"Unsupported device string: {spec}")
+            raise TypeError(f"Unsupported device spec type: {type(spec)}")
+
+        torch_device = _as_torch_device(device)
+
+        if torch_device.type == "cuda":
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA device requested but CUDA is not available.")
+            torch.cuda.set_device(torch_device)
         else:
             torch_device = torch.device("cpu")
 
         # Move the model to the correct device
         model = model.to(torch_device)
+        # model = model.to(device)
 
 
         # Wrap it in the DistributedDataParallel
