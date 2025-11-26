@@ -268,7 +268,9 @@ class ExperimentRunner:
 
         # Wrap it in the DistributedDataParallel
         if(world_size > 1):
-            ddp_kwargs = {}
+            ddp_kwargs = {
+                "gradient_as_bucket_view": False,
+            }
             if torch_device.type == "cuda":
                 ddp_kwargs["device_ids"] = [torch_device.index]
             model = torch.nn.parallel.DistributedDataParallel(
