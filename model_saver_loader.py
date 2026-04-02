@@ -1,6 +1,4 @@
 
-# Python Imports
-
 # Package Imports
 import torch
 
@@ -103,5 +101,3 @@ class ModelSaverLoader:
 
 			# Save the state dict
 			torch.save(self.models_dict[model_name].state_dict(), model_save_filepath)	
-
-

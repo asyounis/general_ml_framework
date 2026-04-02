@@ -3,9 +3,12 @@
 import os 
 
 # Package Imports
-import pynvml
 import torch
 from prettytable import PrettyTable
+try:
+    import pynvml
+except ModuleNotFoundError:
+    pynvml = None
 
 # Project Imports
 from .utils.config import *
@@ -212,6 +215,8 @@ class DeviceSelector:
         return all_devices
 
     def _get_all_device_infos(self):
+        if pynvml is None:
+            return [self._get_gpu_info(device_id) for device_id in self._get_all_device_ids()]
 
         # Init NVML
         pynvml.nvmlInit()   
@@ -233,6 +238,22 @@ class DeviceSelector:
         return device_infos
 
     def _get_gpu_info(self, device_id):
+        if pynvml is None:
+            if torch.cuda.is_available():
+                free_memory, total_memory = torch.cuda.mem_get_info(int(device_id))
+                used_memory = total_memory - free_memory
+            else:
+                free_memory = 0
+                total_memory = 0
+                used_memory = 0
+
+            device_info = dict()
+            device_info["id"] = device_id
+            device_info["free_memory"] = free_memory
+            device_info["used_memory"] = used_memory
+            device_info["total_memory"] = total_memory
+            device_info["num_compute_processes_running"] = 0
+            return device_info
 
         # Create the NVML device handle
         handle = pynvml.nvmlDeviceGetHandleByIndex(int(device_id))
