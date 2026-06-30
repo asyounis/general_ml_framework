@@ -177,6 +177,15 @@ class BaseEvaluator:
             ensure_directory_exists(metric_save_dir)
             torch.save(metric_save_data, "{}/metrics.ptp".format(metric_save_dir))
 
+            # Save per-sequence debug metric data when available.
+            for metric_name in metrics.keys():
+                per_sequence_result = metrics[metric_name].get_per_sequence_result()
+                if len(per_sequence_result) == 0:
+                    continue
+
+                per_sequence_save_file = "{}/{}_per_sequence.pt".format(metric_save_dir, metric_name)
+                torch.save(per_sequence_result, per_sequence_save_file)
+
     def do_qualitative_evaluation(self):
         raise NotImplemented
 
